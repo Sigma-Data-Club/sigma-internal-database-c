@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: club_db
+    restart: always
+    environment:
+      POSTGRES_USER: club
+      POSTGRES_PASSWORD: clubpass
+      POSTGRES_DB: clubdb
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U club -d clubdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: club_api
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - /app/.venv  # prevents host .venv (Windows) from being mounted into the container
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    # If your alembic config file is not at /app/alembic.ini, adjust the -c path.
+    command: ["uv", "run", "alembic", "-c", "alembic.ini", "upgrade", "head"]
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+
+volumes:
+  postgres_data:
