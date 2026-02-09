@@ -1,23 +1,19 @@
-version: "3.9"
 
 services:
   db:
     image: postgres:16
     container_name: club_db
     restart: always
-    environment:
-      POSTGRES_USER: club
-      POSTGRES_PASSWORD: clubpass
-      POSTGRES_DB: clubdb
+    env_file:
+      - .env
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U club -d clubdb"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       start_period: 10s
 
   api:
