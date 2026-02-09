@@ -22,7 +22,7 @@ services:
       dockerfile: Dockerfile
       target: dev
     container_name: club_api
-    restart: always
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
@@ -33,6 +33,22 @@ services:
     volumes:
       - ./backend:/app
       - /app/.venv  # prevents host .venv (Windows) from being mounted into the container
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; url='http://127.0.0.1:8000/health'; sys.exit(0) if urllib.request.urlopen(url, timeout=2).getcode()==200 else sys.exit(1)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   migrate:
     build:
@@ -49,6 +65,9 @@ services:
     volumes:
       - ./backend:/app
       - /app/.venv
+    profiles:
+      - migrate
+    restart: "no"
 
 volumes:
   postgres_data:
