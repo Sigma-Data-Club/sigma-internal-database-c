@@ -33,7 +33,7 @@ x-api-healthcheck: &api_healthcheck
   healthcheck:
     test:
       - CMD-SHELL
-      - python -c "import urllib.request,sys; url='http://127.0.0.1:8000/'; sys.exit(0) if urllib.request.urlopen(url, timeout=2).getcode()==200 else sys.exit(1)"
+      - python -c "import urllib.request,sys; url='http://127.0.0.1:8000/health'; sys.exit(0) if urllib.request.urlopen(url, timeout=2).getcode()==200 else sys.exit(1)"
     interval: 10s
     timeout: 5s
     retries: 3
