@@ -5,12 +5,13 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.110",
   "uvicorn[standard]>=0.27",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
   "sqlalchemy>=2.0",
   "alembic>=1.13",
   "psycopg[binary]>=3.1",
   "python-dotenv>=1.0",
 ]
-
 [tool.uv]
 # Keep uv behavior simple and deterministic for teams.
 # uv.lock will pin exact versions.
