@@ -1,0 +1,123 @@
+# Compose spec supports a project name; it helps keep networks/volumes grouped and predictable.
+name: sigma-internal-database-c
+
+# -----------------------------
+# Extensions / reusable snippets
+# -----------------------------
+
+# Shared environment file for services that need the same .env variables.
+x-env: &env
+  env_file:
+    - .env
+
+# Shared backend build config (API + migrations share the same Dockerfile/target).
+x-backend-build: &backend_build
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+    target: dev
+
+# Shared backend volumes:
+# - bind-mount source code for hot reload
+# - anonymous volume for /app/.venv to prevent Windows host .venv from being mounted into the container
+x-backend-volumes: &backend_volumes
+  volumes:
+    - ./backend:/app
+    - /app/.venv
+
+# Shared API healthcheck:
+# Uses an HTTP GET to verify the service is responding.
+# NOTE: currently checks "/" because your FastAPI has @app.get("/").
+# If you add /health later, switch the URL to ".../health".
+x-api-healthcheck: &api_healthcheck
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - python -c "import urllib.request,sys; url='http://127.0.0.1:8000/health'; sys.exit(0) if urllib.request.urlopen(url, timeout=2).getcode()==200 else sys.exit(1)"
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+
+services:
+  # -----------------------------
+  # Database (PostgreSQL)
+  # -----------------------------
+  db:
+    image: postgres:16
+    # container_name is optional; keeping it makes `docker logs club_db` convenient,
+    # but it reduces flexibility if you later run multiple copies of the project.
+    container_name: club_db
+
+    restart: always
+
+    # Load POSTGRES_* variables from .env (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB).
+    <<: *env
+
+    # Expose DB to the host for local tools (pgAdmin, DBeaver).
+    # Host:5433 -> Container:5432
+    ports:
+      - "5433:5432"
+
+    # Persist database data across restarts/recreates.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # Healthcheck makes sure the DB is ready before dependent services start.
+    # "$$" is required so Compose does NOT substitute variables at parse time.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+
+  # -----------------------------
+  # API (FastAPI + Uvicorn)
+  # -----------------------------
+  api:
+    container_name: club_api
+    restart: unless-stopped
+
+    # Merge reusable blocks: build + env + volumes + healthcheck.
+    <<: [*backend_build, *env, *backend_volumes, *api_healthcheck]
+
+    # Wait until DB is healthy before starting the API.
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # Expose API to the host: http://localhost:8000
+    ports:
+      - "8000:8000"
+
+
+  # -----------------------------
+  # Migrations (one-off, profile-gated)
+  # -----------------------------
+  migrate:
+    # Reuse the same image/build and mounts as the API.
+    <<: [*backend_build, *env, *backend_volumes]
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # One-shot migration command (runs and exits).
+    # Adjust alembic.ini path only if it is not located at /app/alembic.ini.
+    command: ["uv", "run", "alembic", "-c", "alembic.ini", "upgrade", "head"]
+
+    # Don't run migrations on every `docker compose up` unless explicitly requested.
+    profiles: ["migrate"]
+
+    # Ensure it doesn't restart; migration failures should be visible.
+    restart: "no"
+
+
+# -----------------------------
+# Named volumes
+# -----------------------------
+volumes:
+  # Named volume to persist PostgreSQL data.
+  postgres_data:
