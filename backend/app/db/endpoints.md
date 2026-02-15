@@ -9,5 +9,5 @@ POST   /members
 PUT    /members/{memberId}
 PATCH  /members/{memberId}
 DELETE /members/{memberId}   (recomendado: set is_active=false)
-GET /academic-programs/{id}/members
 GET /members/{id}/roles
+GET /academic-programs/{id}/members
