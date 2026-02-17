@@ -11,3 +11,81 @@ PATCH  /members/{memberId}
 DELETE /members/{memberId}   (recomendado: set is_active=false)
 GET /members/{id}/roles
 GET /academic-programs/{id}/members
+
+GET    /roles
+GET    /roles/{roleId}
+POST   /roles
+PUT    /roles/{roleId}
+DELETE /roles/{roleId}
+GET    /permissions
+GET    /permissions/{permissionId}
+POST   /permissions
+PUT    /permissions/{permissionId}
+DELETE /permissions/{permissionId}
+POST   /roles/{roleId}/permissions/{permissionId}
+DELETE /roles/{roleId}/permissions/{permissionId}
+GET    /roles/{roleId}/permissions
+POST   /members/{memberId}/roles/{roleId}
+DELETE /members/{memberId}/roles/{roleId}
+GET    /members/{memberId}/roles
+
+GET    /events
+GET    /events/{eventId}
+POST   /events
+PUT    /events/{eventId}
+DELETE /events/{eventId}
+GET    /events/{eventId}/applications
+GET    /events/{eventId}/applications/{memberId}
+POST   /events/{eventId}/applications
+PATCH  /events/{eventId}/applications/{memberId}
+DELETE /events/{eventId}/applications/{memberId}
+GET    /events/{eventId}/feedback
+GET    /events/{eventId}/feedback/{feedbackId}
+POST   /events/{eventId}/feedback
+DELETE /events/{eventId}/feedback/{feedbackId}
+
+GET    /projects
+GET    /projects/{projectId}
+POST   /projects
+PUT    /projects/{projectId}
+DELETE /projects/{projectId}
+GET    /projects/{projectId}/members
+POST   /projects/{projectId}/members
+PATCH  /projects/{projectId}/members/{memberId}
+DELETE /projects/{projectId}/members/{memberId}
+GET    /academic-credits
+GET    /academic-credits/{creditId}
+POST   /academic-credits
+PUT    /academic-credits/{creditId}
+DELETE /academic-credits/{creditId}
+
+GET    /finance-transactions
+GET    /finance-transactions/{transactionId}
+POST   /finance-transactions
+PUT    /finance-transactions/{transactionId}
+DELETE /finance-transactions/{transactionId}
+GET /finance-transactions?type=expense
+GET /finance-transactions?projectId=123
+GET /finance-transactions?eventId=456
+
+GET    /sponsors
+GET    /sponsors/{sponsorId}
+POST   /sponsors
+PUT    /sponsors/{sponsorId}
+DELETE /sponsors/{sponsorId}
+GET    /events/{eventId}/sponsors
+POST   /events/{eventId}/sponsors
+PUT    /events/{eventId}/sponsors/{sponsorId}
+DELETE /events/{eventId}/sponsors/{sponsorId}
+
+GET    /social-snapshots
+GET    /social-snapshots/{snapshotId}
+POST   /social-snapshots
+PUT    /social-snapshots/{snapshotId}
+DELETE /social-snapshots/{snapshotId}
+GET /social-snapshots?platform=instagram
+GET /social-snapshots?date=2026-01-01
+
+GET    /activity-logs
+GET    /activity-logs/{logId}
+POST /activity-logs
