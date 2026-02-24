@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import secrets
 import os
 from passlib.context import CryptContext
-from jose import jwt
+from jose import JWTError, jwt
+from fastapi import HTTPException, status
 
 _pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
@@ -42,3 +44,16 @@ def create_refresh_token() -> str:
 def hash_refresh_token(token: str) -> str:
     # fast + OK for token hashing; if you want stronger, use HMAC with secret
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+def verify_refresh_token(token: str, token_hash: str) -> bool:
+    return hmac.compare_digest(hash_refresh_token(token), token_hash)
+
+def decode_access_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, _jwt_secret(), algorithms=[_jwt_alg()])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
