@@ -26,3 +26,6 @@ from .event_sponsor import EventSponsor
 
 from .social_platform_snapshot import SocialPlatformSnapshot
 from .activity_log import ActivityLog
+
+from .member_auth import MemberAuth
+from .auth_session import AuthSession

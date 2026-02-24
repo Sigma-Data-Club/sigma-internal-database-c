@@ -88,3 +88,16 @@ class Member(Base):
         back_populates="member",
         cascade="all, delete-orphan",
     )
+
+    auth = relationship(
+        "MemberAuth",
+        back_populates="member",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    sessions = relationship(
+    "AuthSession",
+    back_populates="member",
+    cascade="all, delete-orphan",
+    )
