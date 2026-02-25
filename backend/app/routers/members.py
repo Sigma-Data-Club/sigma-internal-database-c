@@ -2,14 +2,19 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
-from app.core.admin_guard import require_admin_key
+from app.core.permissions import require_admin_or_permissions
 from app.schemas.member import MemberCreate, MemberCreateResponse, MemberOut
 from app.services.member_service import MemberService
 
 router = APIRouter(prefix="/members", tags=["members"])
 
-@router.post("", response_model=MemberCreateResponse, dependencies=[Depends(require_admin_key)])
-def create_member(payload: MemberCreate, db: Session = Depends(get_db)):
+
+@router.post("", response_model=MemberCreateResponse)
+def create_member(
+    payload: MemberCreate,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_admin_or_permissions("member.create")),  # <-- ВАЖНО: не в dependencies=[]
+):
     member, temp_password = MemberService.create_member(db, data=payload)
     return MemberCreateResponse(
         member=MemberOut(
