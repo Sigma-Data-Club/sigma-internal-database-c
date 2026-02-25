@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 
 class MemberCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
@@ -25,3 +25,23 @@ class MemberOut(BaseModel):
 class MemberCreateResponse(BaseModel):
     member: MemberOut
     temporary_password: Optional[str] = None
+
+class MemberListResponse(BaseModel):
+    items: List[MemberOut]
+    total: int
+    limit: int
+    offset: int
+
+class MemberUpdate(BaseModel):
+    first_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(default=None, max_length=60)
+    academic_program_id: Optional[int] = None
+    study_year: Optional[int] = Field(default=None, ge=1, le=8)
+
+class MemberListResponse(BaseModel):
+    items: List[MemberOut]
+    total: int
+    limit: int
+    offset: int
