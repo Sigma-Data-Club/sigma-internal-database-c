@@ -4,7 +4,7 @@ from .enums import (
 )
 
 from .academic_program import AcademicProgram
-from .member import Member
+from .academic_credit import AcademicCredit
 
 from .role import Role
 from .permission import Permission
@@ -14,18 +14,22 @@ from .member_role import MemberRole
 from .event import Event
 from .event_application import EventApplication
 from .event_feedback import EventFeedback
+from .event_sponsor import EventSponsor
 
 from .project import Project
 from .project_member import ProjectMember
-from .academic_credit import AcademicCredit
+
 
 from .finance_transaction import FinanceTransaction
 
 from .sponsor import Sponsor
-from .event_sponsor import EventSponsor
 
 from .social_platform_snapshot import SocialPlatformSnapshot
+
 from .activity_log import ActivityLog
 
-from .member_auth import MemberAuth
 from .auth_session import AuthSession
+
+from app.models.member import Member
+from app.models.member_auth import MemberAuth
+from app.models.auth_session import AuthSession
