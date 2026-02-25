@@ -10,6 +10,8 @@ from app.schemas.member import (
     MemberCreate, MemberCreateResponse, MemberOut,
     MemberUpdate, MemberListResponse
 )
+from app.schemas.role import RoleOut
+from app.schemas.member_role import MemberRolesResponse, MemberRolesReplace
 
 
 
@@ -151,3 +153,47 @@ def create_member(
         ),
         temporary_password=temp_password,
     )
+
+@router.get("/{member_id}/roles", response_model=MemberRolesResponse)
+def get_member_roles(
+    member_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_permissions("rbac.manage")),
+):
+    roles = MemberService.list_member_roles(db, member_id=member_id)
+    return MemberRolesResponse(
+        items=[RoleOut(role_id=r.role_id, name=r.name) for r in roles]
+    )
+
+
+@router.put("/{member_id}/roles")
+def replace_member_roles(
+    member_id: int,
+    payload: MemberRolesReplace,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_permissions("rbac.manage")),
+):
+    MemberService.replace_member_roles(db, member_id=member_id, role_ids=payload.role_ids)
+    return {"status": "updated"}
+
+
+@router.post("/{member_id}/roles/{role_id}")
+def add_member_role(
+    member_id: int,
+    role_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_permissions("rbac.manage")),
+):
+    MemberService.add_member_role(db, member_id=member_id, role_id=role_id)
+    return {"status": "added"}
+
+
+@router.delete("/{member_id}/roles/{role_id}")
+def remove_member_role(
+    member_id: int,
+    role_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_permissions("rbac.manage")),
+):
+    MemberService.remove_member_role(db, member_id=member_id, role_id=role_id)
+    return {"status": "removed"}

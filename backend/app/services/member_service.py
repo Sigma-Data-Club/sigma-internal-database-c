@@ -4,13 +4,15 @@ import secrets
 import string
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from app.core.errors import ErrorCode, error_payload
 from app.core.security import hash_password
+from app.models.role import Role
 from app.models.member import Member
 from app.models.member_auth import MemberAuth
+from app.models.member_role import MemberRole
 from sqlalchemy import select, func
 
 def _generate_password(length: int = 14) -> str:
@@ -149,3 +151,81 @@ class MemberService:
         db.commit()
         db.refresh(member)
         return member
+    
+    @staticmethod
+    def list_member_roles(db: Session, *, member_id: int) -> list[Role]:
+        # ensure member exists
+        MemberService.get_member_by_id(db, member_id=member_id)
+
+        roles = db.scalars(
+            select(Role)
+            .join(MemberRole, MemberRole.role_id == Role.role_id)
+            .where(MemberRole.member_id == member_id)
+            .order_by(Role.name.asc())
+        ).all()
+        return roles
+
+    @staticmethod
+    def add_member_role(db: Session, *, member_id: int, role_id: int) -> None:
+        MemberService.get_member_by_id(db, member_id=member_id)
+
+        role = db.get(Role, role_id)
+        if not role:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Role not found",
+                    details={"role_id": role_id},
+                ),
+            )
+
+        link = MemberRole(member_id=member_id, role_id=role_id)
+        db.add(link)
+        db.commit()
+        # если уже было — сработает UNIQUE/PK и отловится вашим IntegrityError handler
+
+    @staticmethod
+    def remove_member_role(db: Session, *, member_id: int, role_id: int) -> None:
+        MemberService.get_member_by_id(db, member_id=member_id)
+
+        res = db.execute(
+            delete(MemberRole).where(
+                MemberRole.member_id == member_id,
+                MemberRole.role_id == role_id,
+            )
+        )
+        if res.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "MemberRole link not found",
+                    details={"member_id": member_id, "role_id": role_id},
+                ),
+            )
+        db.commit()
+
+    @staticmethod
+    def replace_member_roles(db: Session, *, member_id: int, role_ids: list[int]) -> None:
+        MemberService.get_member_by_id(db, member_id=member_id)
+
+        # validate all role_ids exist
+        if role_ids:
+            existing = db.scalars(select(Role.role_id).where(Role.role_id.in_(role_ids))).all()
+            missing = sorted(set(role_ids) - set(existing))
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=error_payload(
+                        ErrorCode.VALIDATION_ERROR,
+                        "Some role_ids do not exist",
+                        details={"missing_role_ids": missing},
+                    ),
+                )
+
+        # replace links
+        db.execute(delete(MemberRole).where(MemberRole.member_id == member_id))
+        for rid in dict.fromkeys(role_ids):  # unique, stable order
+            db.add(MemberRole(member_id=member_id, role_id=rid))
+        db.commit()
