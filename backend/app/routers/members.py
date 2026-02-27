@@ -13,6 +13,9 @@ from app.schemas.member import (
 from app.schemas.role import RoleOut
 from app.schemas.member_role import MemberRolesResponse, MemberRolesReplace
 
+from app.schemas.event_stats import MemberEventApplicationsResponse, MemberEventSummary, MemberEventApplicationRow
+from app.services.event_stats_service import EventStatsService
+from app.models.enums import DecisionStatus
 
 
 router = APIRouter(prefix="/members", tags=["members"])
@@ -197,3 +200,70 @@ def remove_member_role(
 ):
     MemberService.remove_member_role(db, member_id=member_id, role_id=role_id)
     return {"status": "removed"}
+
+@router.get("/{member_id}/events", response_model=MemberEventApplicationsResponse)
+def list_member_events(
+    member_id: int,
+    attended_only: bool = Query(default=False),
+    decision_status: DecisionStatus | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _auth=Depends(require_permissions("member.read")),
+):
+    rows, total = EventStatsService.list_member_events(
+        db,
+        member_id=member_id,
+        limit=limit,
+        offset=offset,
+        attended_only=attended_only,
+        decision_status=decision_status,
+    )
+
+    items = []
+    for app, ev in rows:
+        items.append(MemberEventApplicationRow(
+            event_id=ev.event_id,
+            title=ev.title,
+            start_datetime=ev.start_datetime,
+            end_datetime=ev.end_datetime,
+            applied_at=app.applied_at,
+            decision_status=app.decision_status,
+            attendance_status=app.attendance_status,
+            attendance_mode=app.attendance_mode,
+            feedback_rating=getattr(app, "feedback_rating", None),
+        ))
+
+    return MemberEventApplicationsResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/{member_id}/events/summary", response_model=MemberEventSummary)
+def member_events_summary(
+    member_id: int,
+    db: Session = Depends(get_db),
+    _auth=Depends(require_permissions("member.read")),
+):
+    row = EventStatsService.member_summary(db, member_id=member_id)
+
+    return MemberEventSummary(
+    member_id=member_id,
+    total_applied=int(row.total_applied or 0),
+
+    # Decision breakdown (required by schema)
+    accepted=int(row.accepted or 0),
+    rejected=int(row.rejected or 0),
+    pending=int(row.pending or 0),
+    waitlisted=int(row.waitlisted or 0),
+    cancelled=int(row.cancelled or 0),
+
+    # Attendance breakdown (required by schema)
+    attended=int(row.attended or 0),
+    no_show=int(row.no_show or 0),
+    unknown_attendance=int(row.unknown_attendance or 0),
+
+    # Optional (if schema has it; if not, remove these two)
+    online=int(getattr(row, "online", 0) or 0),
+    in_person=int(getattr(row, "in_person", 0) or 0),
+
+    avg_feedback_rating=float(row.avg_feedback_rating) if row.avg_feedback_rating is not None else None,
+)
