@@ -33,7 +33,9 @@ class EventApplicationService:
         EventApplicationService._ensure_event_exists(db, event_id=event_id)
 
         total = db.scalar(
-            select(func.count()).select_from(EventApplication).where(EventApplication.event_id == event_id)
+            select(func.count())
+            .select_from(EventApplication)
+            .where(EventApplication.event_id == event_id)
         ) or 0
 
         rows = db.scalars(
@@ -65,6 +67,17 @@ class EventApplicationService:
     @staticmethod
     def apply(db: Session, *, event_id: int, member_id: int, attendance_mode) -> EventApplication:
         EventApplicationService._ensure_event_exists(db, event_id=event_id)
+
+        existing = db.get(EventApplication, {"event_id": event_id, "member_id": member_id})
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Already applied to this event",
+                    details={"event_id": event_id, "member_id": member_id},
+                ),
+            )
 
         app = EventApplication(
             event_id=event_id,
@@ -111,13 +124,6 @@ class EventApplicationService:
         rating: int,
         comment: str | None,
     ) -> EventApplication:
-        """
-        Rules:
-        - application must exist
-        - rating must be 1..5
-        - (recommended) only allow feedback if attendance_status == attended
-        - stores feedback inside event_application (rating/comment/submitted_at)
-        """
         if rating < 1 or rating > 5:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -141,6 +147,17 @@ class EventApplicationService:
                         "member_id": member_id,
                         "attendance_status": str(app.attendance_status),
                     },
+                ),
+            )
+
+        # New: block duplicate submission
+        if app.feedback_submitted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Feedback already submitted",
+                    details={"event_id": event_id, "member_id": member_id},
                 ),
             )
 
