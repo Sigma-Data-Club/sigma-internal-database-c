@@ -5,6 +5,7 @@ from app.routers.auth import router as auth_router
 from app.routers.roles import router as roles_router
 from app.routers.permissions import router as permissions_router
 from app.routers.events import router as events_router
+from app.routers import projects
 
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -24,6 +25,7 @@ app.include_router(auth_router)
 app.include_router(roles_router)
 app.include_router(permissions_router)
 app.include_router(events_router)
+app.include_router(projects.router)
 
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, request_validation_handler)
