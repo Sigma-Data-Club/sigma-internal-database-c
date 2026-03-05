@@ -40,7 +40,7 @@ class Member(Base):
         nullable=True,
     )
 
-    # NEW: student's course / year of study
+    # student's course / year of study
     study_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
@@ -70,11 +70,6 @@ class Member(Base):
         "EventApplication",
         back_populates="member",
         cascade="all, delete-orphan",
-    )
-
-    event_feedbacks = relationship(
-        "EventFeedback",
-        back_populates="member",
     )
 
     academic_credits = relationship(
