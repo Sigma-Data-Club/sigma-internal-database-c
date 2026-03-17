@@ -19,7 +19,7 @@ from app.routers.events import router as events_router
 from app.routers.members import router as members_router
 from app.routers.permissions import router as permissions_router
 from app.routers.roles import router as roles_router
-
+from app.ai.router import router as ai_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(permissions_router)
     app.include_router(events_router)
     app.include_router(projects.router)
-
+    app.include_router(ai_router)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_handler)
     app.add_exception_handler(IntegrityError, integrity_error_handler)
