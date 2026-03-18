@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, case
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ErrorCode, error_payload
+from app.models.enums import ProjectApplicationStatus, ProjectStatus
+from app.models.member import Member
 from app.models.project import Project
+from app.models.project_application import ProjectApplication
 from app.models.project_member import ProjectMember
-from app.models.enums import ProjectStatus
 
 
 def _validate_project_dates(started_at: date | None, finished_at: date | None) -> None:
-    # В БД уже есть constraint, но лучше вернуть человеку понятный 422.
     if started_at is not None and finished_at is not None and finished_at < started_at:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -26,7 +27,19 @@ def _validate_project_dates(started_at: date | None, finished_at: date | None) -
 
 
 class ProjectService:
-    # ---- Projects ----
+    @staticmethod
+    def get_member(db: Session, *, member_id: int) -> Member:
+        obj = db.get(Member, member_id)
+        if not obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Member not found",
+                    details={"member_id": member_id},
+                ),
+            )
+        return obj
 
     @staticmethod
     def list_projects(
@@ -158,8 +171,6 @@ class ProjectService:
         db.delete(obj)
         db.commit()
 
-    # ---- Members ----
-
     @staticmethod
     def list_project_members(
         db: Session,
@@ -212,10 +223,10 @@ class ProjectService:
         project_role: str,
     ) -> ProjectMember:
         ProjectService.get_project(db, project_id=project_id)
+        ProjectService.get_member(db, member_id=member_id)
 
         existing = db.get(ProjectMember, {"project_id": project_id, "member_id": member_id})
         if existing:
-            # Идемпотентно: либо вернём существующего, либо можно 409 — но обычно удобнее вернуть.
             return existing
 
         obj = ProjectMember(
@@ -239,14 +250,16 @@ class ProjectService:
     ) -> ProjectMember:
         obj = ProjectService.get_project_member(db, project_id=project_id, member_id=member_id)
 
-        # left_at constraint есть в БД, но можно вернуть красивее:
         if left_at is not None and obj.joined_at is not None and left_at < obj.joined_at:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=error_payload(
                     ErrorCode.VALIDATION_ERROR,
                     "left_at must be >= joined_at",
-                    details={"joined_at": obj.joined_at.isoformat(), "left_at": left_at.isoformat()},
+                    details={
+                        "joined_at": obj.joined_at.isoformat(),
+                        "left_at": left_at.isoformat(),
+                    },
                 ),
             )
 
@@ -265,7 +278,232 @@ class ProjectService:
         obj = ProjectService.get_project_member(db, project_id=project_id, member_id=member_id)
         db.delete(obj)
         db.commit()
-    
+
+    @staticmethod
+    def get_project_application(
+        db: Session,
+        *,
+        project_id: int,
+        application_id: int,
+    ) -> ProjectApplication:
+        ProjectService.get_project(db, project_id=project_id)
+
+        obj = db.get(ProjectApplication, application_id)
+        if not obj or obj.project_id != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Project application not found",
+                    details={"project_id": project_id, "application_id": application_id},
+                ),
+            )
+        return obj
+
+    @staticmethod
+    def list_project_applications(
+        db: Session,
+        *,
+        project_id: int,
+        status_: ProjectApplicationStatus | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[ProjectApplication], int]:
+        ProjectService.get_project(db, project_id=project_id)
+
+        stmt = select(ProjectApplication).where(ProjectApplication.project_id == project_id)
+        count_stmt = (
+            select(func.count())
+            .select_from(ProjectApplication)
+            .where(ProjectApplication.project_id == project_id)
+        )
+
+        if status_ is not None:
+            stmt = stmt.where(ProjectApplication.status == status_)
+            count_stmt = count_stmt.where(ProjectApplication.status == status_)
+
+        total = db.scalar(count_stmt) or 0
+
+        items = db.scalars(
+            stmt.order_by(ProjectApplication.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+
+        return items, total
+
+    @staticmethod
+    def create_project_application(
+        db: Session,
+        *,
+        project_id: int,
+        member_id: int,
+        desired_role: str,
+        application_text: str,
+    ) -> ProjectApplication:
+        project = ProjectService.get_project(db, project_id=project_id)
+        ProjectService.get_member(db, member_id=member_id)
+
+        if project.status in {ProjectStatus.finished, ProjectStatus.archived}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Applications are not allowed for this project status",
+                    details={"project_status": project.status.value},
+                ),
+            )
+
+        existing_member = db.get(ProjectMember, {"project_id": project_id, "member_id": member_id})
+        if existing_member and existing_member.left_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Member is already active in this project",
+                    details={"project_id": project_id, "member_id": member_id},
+                ),
+            )
+
+        pending_exists = db.scalar(
+            select(func.count())
+            .select_from(ProjectApplication)
+            .where(ProjectApplication.project_id == project_id)
+            .where(ProjectApplication.member_id == member_id)
+            .where(ProjectApplication.status == ProjectApplicationStatus.pending)
+        ) or 0
+
+        if pending_exists:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Pending application already exists",
+                    details={"project_id": project_id, "member_id": member_id},
+                ),
+            )
+
+        obj = ProjectApplication(
+            project_id=project_id,
+            member_id=member_id,
+            desired_role=desired_role,
+            application_text=application_text,
+            status=ProjectApplicationStatus.pending,
+        )
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        return obj
+
+    @staticmethod
+    def decide_project_application(
+        db: Session,
+        *,
+        project_id: int,
+        application_id: int,
+        decided_by_member_id: int,
+        status_: ProjectApplicationStatus,
+        manager_note: str | None,
+    ) -> ProjectApplication:
+        if status_ not in {
+            ProjectApplicationStatus.accepted,
+            ProjectApplicationStatus.rejected,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Decision status must be accepted or rejected",
+                    details={"status": status_.value},
+                ),
+            )
+
+        ProjectService.get_member(db, member_id=decided_by_member_id)
+        obj = ProjectService.get_project_application(
+            db,
+            project_id=project_id,
+            application_id=application_id,
+        )
+
+        if obj.status != ProjectApplicationStatus.pending:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Only pending applications can be decided",
+                    details={"application_id": application_id, "status": obj.status.value},
+                ),
+            )
+
+        obj.status = status_
+        obj.manager_note = manager_note
+        obj.reviewed_at = datetime.now(timezone.utc)
+        obj.reviewed_by_member_id = decided_by_member_id
+
+        if status_ == ProjectApplicationStatus.accepted:
+            existing_member = db.get(
+                ProjectMember,
+                {"project_id": obj.project_id, "member_id": obj.member_id},
+            )
+
+            if existing_member:
+                existing_member.project_role = obj.desired_role
+                existing_member.left_at = None
+                db.add(existing_member)
+            else:
+                db.add(
+                    ProjectMember(
+                        project_id=obj.project_id,
+                        member_id=obj.member_id,
+                        project_role=obj.desired_role,
+                    )
+                )
+
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        return obj
+
+    @staticmethod
+    def withdraw_project_application(
+        db: Session,
+        *,
+        project_id: int,
+        application_id: int,
+        member_id: int,
+    ) -> ProjectApplication:
+        obj = ProjectService.get_project_application(
+            db,
+            project_id=project_id,
+            application_id=application_id,
+        )
+
+        if obj.member_id != member_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "You can withdraw only your own application",
+                    details={"application_id": application_id, "member_id": member_id},
+                ),
+            )
+
+        if obj.status != ProjectApplicationStatus.pending:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_payload(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Only pending applications can be withdrawn",
+                    details={"application_id": application_id, "status": obj.status.value},
+                ),
+            )
+
+        obj.status = ProjectApplicationStatus.withdrawn
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        return obj
+
     @staticmethod
     def list_active_projects(
         db: Session,
@@ -299,7 +537,13 @@ class ProjectService:
             .where(ProjectMember.left_at.is_(None))
         ) or 0
 
-        # Optional finance aggregation
+        applications_pending = db.scalar(
+            select(func.count())
+            .select_from(ProjectApplication)
+            .where(ProjectApplication.project_id == project_id)
+            .where(ProjectApplication.status == ProjectApplicationStatus.pending)
+        ) or 0
+
         finance_income_total = None
         finance_expense_total = None
         finance_balance = None
@@ -314,7 +558,10 @@ class ProjectService:
             income_sum = func.coalesce(
                 func.sum(
                     case(
-                        (FinanceTransaction.transaction_type == FinanceTransactionType.income, FinanceTransaction.amount_cents),
+                        (
+                            FinanceTransaction.transaction_type == FinanceTransactionType.income,
+                            FinanceTransaction.amount_cents,
+                        ),
                         else_=0,
                     )
                 ),
@@ -323,7 +570,10 @@ class ProjectService:
             expense_sum = func.coalesce(
                 func.sum(
                     case(
-                        (FinanceTransaction.transaction_type == FinanceTransactionType.expense, FinanceTransaction.amount_cents),
+                        (
+                            FinanceTransaction.transaction_type == FinanceTransactionType.expense,
+                            FinanceTransaction.amount_cents,
+                        ),
                         else_=0,
                     )
                 ),
@@ -341,6 +591,7 @@ class ProjectService:
         return {
             "members_total": int(members_total),
             "members_active": int(members_active),
+            "applications_pending": int(applications_pending),
             "finance_income_total": finance_income_total,
             "finance_expense_total": finance_expense_total,
             "finance_balance": finance_balance,

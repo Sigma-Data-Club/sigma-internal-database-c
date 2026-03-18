@@ -5,29 +5,34 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
 from app.core.permissions import require_permissions
-from app.models.enums import ProjectStatus
+from app.models.enums import ProjectApplicationStatus, ProjectStatus
 from app.schemas.project import (
+    ProjectApplicationCreate,
+    ProjectApplicationDecision,
+    ProjectApplicationListOut,
+    ProjectApplicationOut,
     ProjectCreate,
-    ProjectPut,
-    ProjectPatch,
-    ProjectOut,
     ProjectListOut,
     ProjectMemberCreate,
-    ProjectMemberPatch,
-    ProjectMemberOut,
     ProjectMemberListOut,
-    ProjectSummaryOut, 
-    ProjectStatsOut
+    ProjectMemberOut,
+    ProjectMemberPatch,
+    ProjectOut,
+    ProjectPatch,
+    ProjectPut,
+    ProjectStatsOut,
+    ProjectSummaryOut,
 )
 from app.services.project_service import ProjectService
-
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
-# ---- Projects ----
-
-@router.get("", response_model=ProjectListOut, dependencies=[Depends(require_permissions("project.read"))])
+@router.get(
+    "",
+    response_model=ProjectListOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
 def list_projects(
     q: str | None = Query(default=None),
     status: ProjectStatus | None = Query(default=None),
@@ -35,16 +40,41 @@ def list_projects(
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    items, total = ProjectService.list_projects(db, q=q, status_=status, limit=limit, offset=offset)
+    items, total = ProjectService.list_projects(
+        db,
+        q=q,
+        status_=status,
+        limit=limit,
+        offset=offset,
+    )
     return ProjectListOut(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.get("/{project_id}", response_model=ProjectOut, dependencies=[Depends(require_permissions("project.read"))])
-def get_project(project_id: int, db: Session = Depends(get_db)):
-    return ProjectService.get_project(db, project_id=project_id)
+@router.get(
+    "/active",
+    response_model=ProjectListOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
+def list_active_projects(
+    q: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    items, total = ProjectService.list_active_projects(
+        db,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+    return ProjectListOut(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("", response_model=ProjectOut, dependencies=[Depends(require_permissions("project.manage"))])
+@router.post(
+    "",
+    response_model=ProjectOut,
+    dependencies=[Depends(require_permissions("project.create"))],
+)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     return ProjectService.create_project(
         db,
@@ -56,7 +86,20 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     )
 
 
-@router.put("/{project_id}", response_model=ProjectOut, dependencies=[Depends(require_permissions("project.manage"))])
+@router.get(
+    "/{project_id}",
+    response_model=ProjectOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
+def get_project(project_id: int, db: Session = Depends(get_db)):
+    return ProjectService.get_project(db, project_id=project_id)
+
+
+@router.put(
+    "/{project_id}",
+    response_model=ProjectOut,
+    dependencies=[Depends(require_permissions("project.update"))],
+)
 def put_project(project_id: int, payload: ProjectPut, db: Session = Depends(get_db)):
     return ProjectService.put_project(
         db,
@@ -69,7 +112,11 @@ def put_project(project_id: int, payload: ProjectPut, db: Session = Depends(get_
     )
 
 
-@router.patch("/{project_id}", response_model=ProjectOut, dependencies=[Depends(require_permissions("project.manage"))])
+@router.patch(
+    "/{project_id}",
+    response_model=ProjectOut,
+    dependencies=[Depends(require_permissions("project.update"))],
+)
 def patch_project(project_id: int, payload: ProjectPatch, db: Session = Depends(get_db)):
     return ProjectService.patch_project(
         db,
@@ -82,32 +129,56 @@ def patch_project(project_id: int, payload: ProjectPatch, db: Session = Depends(
     )
 
 
-@router.delete("/{project_id}", status_code=204, dependencies=[Depends(require_permissions("project.manage"))])
+@router.delete(
+    "/{project_id}",
+    status_code=204,
+    dependencies=[Depends(require_permissions("project.delete"))],
+)
 def delete_project(project_id: int, db: Session = Depends(get_db)):
     ProjectService.delete_project(db, project_id=project_id)
     return None
 
 
-# ---- Project members ----
-
-@router.get("/{project_id}/members", response_model=ProjectMemberListOut, dependencies=[Depends(require_permissions("project.read"))])
+@router.get(
+    "/{project_id}/members",
+    response_model=ProjectMemberListOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
 def list_project_members(
     project_id: int,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    items, total = ProjectService.list_project_members(db, project_id=project_id, limit=limit, offset=offset)
+    items, total = ProjectService.list_project_members(
+        db,
+        project_id=project_id,
+        limit=limit,
+        offset=offset,
+    )
     return ProjectMemberListOut(items=items, total=total)
 
 
-@router.get("/{project_id}/members/{member_id}", response_model=ProjectMemberOut, dependencies=[Depends(require_permissions("project.read"))])
+@router.get(
+    "/{project_id}/members/{member_id}",
+    response_model=ProjectMemberOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
 def get_project_member(project_id: int, member_id: int, db: Session = Depends(get_db)):
     return ProjectService.get_project_member(db, project_id=project_id, member_id=member_id)
 
 
-@router.post("/{project_id}/members/{member_id}", response_model=ProjectMemberOut, dependencies=[Depends(require_permissions("project.manage"))])
-def add_project_member(project_id: int, member_id: int, payload: ProjectMemberCreate, db: Session = Depends(get_db)):
+@router.post(
+    "/{project_id}/members/{member_id}",
+    response_model=ProjectMemberOut,
+    dependencies=[Depends(require_permissions("project.manage"))],
+)
+def add_project_member(
+    project_id: int,
+    member_id: int,
+    payload: ProjectMemberCreate,
+    db: Session = Depends(get_db),
+):
     return ProjectService.add_project_member(
         db,
         project_id=project_id,
@@ -116,8 +187,17 @@ def add_project_member(project_id: int, member_id: int, payload: ProjectMemberCr
     )
 
 
-@router.patch("/{project_id}/members/{member_id}", response_model=ProjectMemberOut, dependencies=[Depends(require_permissions("project.manage"))])
-def patch_project_member(project_id: int, member_id: int, payload: ProjectMemberPatch, db: Session = Depends(get_db)):
+@router.patch(
+    "/{project_id}/members/{member_id}",
+    response_model=ProjectMemberOut,
+    dependencies=[Depends(require_permissions("project.manage"))],
+)
+def patch_project_member(
+    project_id: int,
+    member_id: int,
+    payload: ProjectMemberPatch,
+    db: Session = Depends(get_db),
+):
     return ProjectService.patch_project_member(
         db,
         project_id=project_id,
@@ -127,25 +207,112 @@ def patch_project_member(project_id: int, member_id: int, payload: ProjectMember
     )
 
 
-@router.delete("/{project_id}/members/{member_id}", status_code=204, dependencies=[Depends(require_permissions("project.manage"))])
+@router.delete(
+    "/{project_id}/members/{member_id}",
+    status_code=204,
+    dependencies=[Depends(require_permissions("project.manage"))],
+)
 def remove_project_member(project_id: int, member_id: int, db: Session = Depends(get_db)):
     ProjectService.remove_project_member(db, project_id=project_id, member_id=member_id)
     return None
 
-@router.get("/active", response_model=ProjectListOut, dependencies=[Depends(require_permissions("project.read"))])
-def list_active_projects(
-    q: str | None = Query(default=None),
+
+@router.get(
+    "/{project_id}/applications",
+    response_model=ProjectApplicationListOut,
+    dependencies=[Depends(require_permissions("project.manage"))],
+)
+def list_project_applications(
+    project_id: int,
+    status: ProjectApplicationStatus | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    items, total = ProjectService.list_active_projects(db, q=q, limit=limit, offset=offset)
-    return ProjectListOut(items=items, total=total, limit=limit, offset=offset)
+    items, total = ProjectService.list_project_applications(
+        db,
+        project_id=project_id,
+        status_=status,
+        limit=limit,
+        offset=offset,
+    )
+    return ProjectApplicationListOut(items=items, total=total, limit=limit, offset=offset)
 
-@router.get("/{project_id}/summary", response_model=ProjectSummaryOut, dependencies=[Depends(require_permissions("project.read"))])
+
+@router.post(
+    "/{project_id}/applications/{member_id}",
+    response_model=ProjectApplicationOut,
+    dependencies=[Depends(require_permissions("project.apply"))],
+)
+def create_project_application(
+    project_id: int,
+    member_id: int,
+    payload: ProjectApplicationCreate,
+    db: Session = Depends(get_db),
+):
+    return ProjectService.create_project_application(
+        db,
+        project_id=project_id,
+        member_id=member_id,
+        desired_role=payload.desired_role,
+        application_text=payload.application_text,
+    )
+
+
+@router.patch(
+    "/{project_id}/applications/{application_id}/decide/{decided_by_member_id}",
+    response_model=ProjectApplicationOut,
+    dependencies=[Depends(require_permissions("project.manage"))],
+)
+def decide_project_application(
+    project_id: int,
+    application_id: int,
+    decided_by_member_id: int,
+    payload: ProjectApplicationDecision,
+    db: Session = Depends(get_db),
+):
+    return ProjectService.decide_project_application(
+        db,
+        project_id=project_id,
+        application_id=application_id,
+        decided_by_member_id=decided_by_member_id,
+        status_=payload.status,
+        manager_note=payload.manager_note,
+    )
+
+
+@router.post(
+    "/{project_id}/applications/{application_id}/withdraw/{member_id}",
+    response_model=ProjectApplicationOut,
+    dependencies=[Depends(require_permissions("project.apply"))],
+)
+def withdraw_project_application(
+    project_id: int,
+    application_id: int,
+    member_id: int,
+    db: Session = Depends(get_db),
+):
+    return ProjectService.withdraw_project_application(
+        db,
+        project_id=project_id,
+        application_id=application_id,
+        member_id=member_id,
+    )
+
+
+@router.get(
+    "/{project_id}/summary",
+    response_model=ProjectSummaryOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
 def get_project_summary(project_id: int, db: Session = Depends(get_db)):
     return ProjectService.get_project_summary(db, project_id=project_id)
 
-@router.get("/{project_id}/stats", response_model=ProjectStatsOut, dependencies=[Depends(require_permissions("project.read"))])
+
+@router.get(
+    "/{project_id}/stats",
+    response_model=ProjectStatsOut,
+    dependencies=[Depends(require_permissions("project.read"))],
+)
 def get_project_stats(project_id: int, db: Session = Depends(get_db)):
     return ProjectService.get_project_stats(db, project_id=project_id)

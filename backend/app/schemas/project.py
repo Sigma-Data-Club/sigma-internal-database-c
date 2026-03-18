@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import ProjectStatus
+from app.models.enums import ProjectStatus, ProjectApplicationStatus
 
 
 class ProjectBase(BaseModel):
@@ -21,12 +21,10 @@ class ProjectCreate(ProjectBase):
 
 
 class ProjectPut(ProjectBase):
-    """PUT = полная замена"""
     pass
 
 
 class ProjectPatch(BaseModel):
-    """PATCH = частичное обновление"""
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=10_000)
     status: Optional[ProjectStatus] = None
@@ -46,8 +44,6 @@ class ProjectListOut(BaseModel):
     limit: int
     offset: int
 
-
-# ---- Project members ----
 
 class ProjectMemberBase(BaseModel):
     project_role: str = Field(min_length=1, max_length=60)
@@ -81,6 +77,7 @@ class ProjectMemberListOut(BaseModel):
 class ProjectStatsOut(BaseModel):
     members_total: int
     members_active: int
+    applications_pending: int
 
     finance_income_total: Optional[int] = None
     finance_expense_total: Optional[int] = None
@@ -90,3 +87,36 @@ class ProjectStatsOut(BaseModel):
 class ProjectSummaryOut(BaseModel):
     project: ProjectOut
     stats: ProjectStatsOut
+
+
+class ProjectApplicationCreate(BaseModel):
+    desired_role: str = Field(min_length=1, max_length=60)
+    application_text: str = Field(min_length=1, max_length=5000)
+
+
+class ProjectApplicationDecision(BaseModel):
+    status: ProjectApplicationStatus
+    manager_note: Optional[str] = Field(default=None, max_length=5000)
+
+
+class ProjectApplicationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    application_id: int
+    project_id: int
+    member_id: int
+    desired_role: str
+    application_text: str
+    status: ProjectApplicationStatus
+    manager_note: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    reviewed_at: Optional[datetime] = None
+    reviewed_by_member_id: Optional[int] = None
+
+
+class ProjectApplicationListOut(BaseModel):
+    items: list[ProjectApplicationOut]
+    total: int
+    limit: int
+    offset: int

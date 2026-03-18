@@ -1,6 +1,6 @@
 from .enums import (
     DecisionStatus, AttendanceStatus, AttendanceMode,
-    ProjectStatus, FinanceTransactionType
+    ProjectStatus, ProjectApplicationStatus, FinanceTransactionType
 )
 
 from .academic_program import AcademicProgram
@@ -17,7 +17,7 @@ from .event_sponsor import EventSponsor
 
 from .project import Project
 from .project_member import ProjectMember
-
+from .project_application import ProjectApplication
 
 from .finance_transaction import FinanceTransaction
 

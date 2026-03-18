@@ -25,3 +25,9 @@ class ProjectStatus(str, enum.Enum):
 class FinanceTransactionType(str, enum.Enum):
     income = "income"
     expense = "expense"
+
+class ProjectApplicationStatus(str, enum.Enum):
+    pending = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    withdrawn = "withdrawn"
