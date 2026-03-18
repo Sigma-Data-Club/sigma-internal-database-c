@@ -253,7 +253,7 @@ def event_attendance(
 def get_event_stats(
     event_id: int,
     db: Session = Depends(get_db),
-    _auth: MemberModel = Depends(require_permissions("event.read")),
+    _auth: MemberModel = Depends(require_permissions("event.stats.read")),
 ):
     row = EventStatsService.event_stats(db, event_id=event_id)
     return EventStats(
