@@ -93,6 +93,21 @@ services:
       - "8000:8000"
 
 
+  frontend:
+    build:
+      context: ./frontend
+    container_name: club_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_started
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      
   # -----------------------------
   # Migrations (one-off, profile-gated)
   # -----------------------------
