@@ -182,64 +182,75 @@ export default function EventsPage() {
 
         {!loading && error && <Alert severity="error">{error}</Alert>}
 
-        {!loading && !error && (
-          <Paper>
-            {filteredEvents.length === 0 ? (
-              <Box sx={{ p: 2 }}>
-                <Typography>
-                  {search.trim() || filter !== "all"
-                    ? eventStrings.empty.noEventsWithFilters
-                    : eventStrings.empty.noEvents}
-                </Typography>
-              </Box>
-            ) : (
-              <List disablePadding>
-                {filteredEvents.map((event) => {
-                  const status = getEventTimeStatus(event);
+        {!loading && !error && filteredEvents.length === 0 && (
+          <Paper sx={{ p: 3 }}>
+            <Typography color="text.secondary">
+              {eventStrings.empty.noEvents}
+            </Typography>
+          </Paper>
+        )}
 
-                  return (
-                    <Box key={event.event_id}>
-                      <ListItemButton
-                        onClick={() => navigate(`/events/${event.event_id}/manage?tab=overview`)}
-                      >
-                        <ListItemText
-                          primary={
-                            <Stack
-                              direction={{ xs: "column", sm: "row" }}
-                              spacing={1}
-                              alignItems={{ xs: "flex-start", sm: "center" }}
-                            >
-                              <Typography variant="subtitle1">
-                                {event.title}
-                              </Typography>
-                              <Chip
-                                label={getEventStatusLabel(status)}
-                                size="small"
-                                color={getStatusChipColor(status)}
-                              />
-                            </Stack>
-                          }
-                          secondary={
-                            <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                              <Typography variant="body2" color="text.secondary">
-                                {eventStrings.labels.topic}: {event.topic || "—"}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {eventStrings.labels.speaker}: {event.speaker_name || "—"}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {eventStrings.labels.id}: {event.event_id} ·{" "}
-                                {formatEventDateTime(event.start_datetime)}
-                              </Typography>
-                            </Stack>
-                          }
-                        />
-                      </ListItemButton>
-                    </Box>
-                  );
-                })}
-              </List>
-            )}
+        {!loading && !error && filteredEvents.length > 0 && (
+          <Paper>
+            <List disablePadding>
+              {filteredEvents.map((event, index) => {
+                const status = getEventTimeStatus(event);
+
+                return (
+                  <ListItemButton
+                    key={event.event_id}
+                    divider={index < filteredEvents.length - 1}
+                    onClick={() =>
+                      navigate(`/events/${event.event_id}/manage?tab=overview`)
+                    }
+                    sx={{ alignItems: "flex-start", py: 2 }}
+                  >
+                    <ListItemText
+                      primary={
+                        <Stack
+                          direction={{ xs: "column", sm: "row" }}
+                          spacing={1}
+                          justifyContent="space-between"
+                          alignItems={{ xs: "flex-start", sm: "center" }}
+                        >
+                          <Typography variant="subtitle1" fontWeight={600}>
+                            {event.title}
+                          </Typography>
+
+                          <Chip
+                            size="small"
+                            label={getEventStatusLabel(status)}
+                            color={getStatusChipColor(status)}
+                          />
+                        </Stack>
+                      }
+                      secondary={
+                        <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            {event.topic || eventStrings.empty.noTopic}
+                          </Typography>
+
+                          <Typography variant="body2" color="text.secondary">
+                            {eventStrings.labels.start}:{" "}
+                            {formatEventDateTime(event.start_datetime)}
+                          </Typography>
+
+                          <Typography variant="body2" color="text.secondary">
+                            {eventStrings.labels.end}:{" "}
+                            {formatEventDateTime(event.end_datetime)}
+                          </Typography>
+
+                          <Typography variant="body2" color="text.secondary">
+                            {eventStrings.labels.speaker}:{" "}
+                            {event.speaker_name || "—"}
+                          </Typography>
+                        </Stack>
+                      }
+                    />
+                  </ListItemButton>
+                );
+              })}
+            </List>
           </Paper>
         )}
       </Stack>

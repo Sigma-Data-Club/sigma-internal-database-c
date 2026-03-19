@@ -18,7 +18,7 @@ export const eventStrings = {
 
   actions: {
     backToEvents: "Volver a eventos",
-    backToEvent: "Volver al evento",
+    backToEvent: "Volver al eventos",
     createEvent: "Crear evento",
     editEvent: "Editar evento",
     deleteEvent: "Eliminar evento",

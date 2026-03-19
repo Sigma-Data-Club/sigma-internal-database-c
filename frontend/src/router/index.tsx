@@ -31,36 +31,6 @@ function EventOverviewRedirect() {
   return <Navigate to={`/events/${eventId}/manage?tab=overview`} replace />;
 }
 
-function EventApplicationsRedirect() {
-  const { eventId } = useParams();
-
-  if (!eventId) {
-    return <Navigate to="/events" replace />;
-  }
-
-  return <Navigate to={`/events/${eventId}/manage?tab=applications`} replace />;
-}
-
-function EventAttendanceRedirect() {
-  const { eventId } = useParams();
-
-  if (!eventId) {
-    return <Navigate to="/events" replace />;
-  }
-
-  return <Navigate to={`/events/${eventId}/manage?tab=attendance`} replace />;
-}
-
-function EventStatsRedirect() {
-  const { eventId } = useParams();
-
-  if (!eventId) {
-    return <Navigate to="/events" replace />;
-  }
-
-  return <Navigate to={`/events/${eventId}/manage?tab=stats`} replace />;
-}
-
 export const router = createBrowserRouter([
   {
     path: "/login",
@@ -160,40 +130,8 @@ export const router = createBrowserRouter([
       {
         path: "events/:eventId/manage",
         element: (
-          <RequirePermissionRoute
-            permissions={[
-              "event.update",
-              "event.delete",
-              "event.decide",
-              "event.attendance",
-              "event.stats.read",
-            ]}
-          >
+          <RequirePermissionRoute permissions={["event.read"]}>
             <EventManagementPage />
-          </RequirePermissionRoute>
-        ),
-      },
-      {
-        path: "events/:eventId/applications",
-        element: (
-          <RequirePermissionRoute permissions={["event.decide"]}>
-            <EventApplicationsRedirect />
-          </RequirePermissionRoute>
-        ),
-      },
-      {
-        path: "events/:eventId/attendance",
-        element: (
-          <RequirePermissionRoute permissions={["event.attendance", "event.decide"]}>
-            <EventAttendanceRedirect />
-          </RequirePermissionRoute>
-        ),
-      },
-      {
-        path: "events/:eventId/stats",
-        element: (
-          <RequirePermissionRoute permissions={["event.stats.read"]}>
-            <EventStatsRedirect />
           </RequirePermissionRoute>
         ),
       },

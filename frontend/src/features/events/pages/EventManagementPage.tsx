@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
+import axios from "axios";
 import {
   Alert,
   Box,
@@ -10,6 +11,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Divider,
   MenuItem,
   Paper,
   Stack,
@@ -22,19 +24,24 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SendIcon from "@mui/icons-material/Send";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
+  applyToEvent,
   decideEventApplication,
   deleteEvent,
   getEvent,
   getEventStats,
+  getMyEventApplication,
   listEventApplications,
+  submitMyEventFeedback,
   updateEventAttendance,
 } from "../../../api/events";
 import { useAuth } from "../../../context/AuthContext";
 import { hasAnyPermission, hasPermission } from "../../../auth/permissions";
 import type {
+  AttendanceMode,
   DecisionStatus,
   Event,
   EventApplication,
@@ -45,6 +52,7 @@ import { extractEventApiErrorMessage } from "../utils/eventErrors";
 import {
   canManageAttendance,
   canManageAttendanceForApplication,
+  canSubmitFeedback,
   filterApplicationsBySearch,
   formatEventDateTime,
   getAttendanceModeLabel,
@@ -53,6 +61,8 @@ import {
   getEventPhase,
   getEventPhaseChipColor,
   getEventPhaseLabel,
+  getEventStatusLabel,
+  getEventTimeStatus,
   getManagementTabFromSearchParams,
   sortApplicationsByAppliedAt,
   type EventManagementTab,
@@ -96,13 +106,16 @@ export default function EventManagementPage() {
 
   const [eventData, setEventData] = useState<Event | null>(null);
   const [applications, setApplications] = useState<EventApplication[]>([]);
+  const [myApplication, setMyApplication] = useState<EventApplication | null>(null);
   const [stats, setStats] = useState<EventStats | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [applicationLoading, setApplicationLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [applicationError, setApplicationError] = useState<string | null>(null);
 
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -111,6 +124,13 @@ export default function EventManagementPage() {
   const [onlyPending, setOnlyPending] = useState(false);
   const [sortDirection, setSortDirection] = useState<SortDirection>("newest");
   const [topN, setTopN] = useState("5");
+
+  const [applyMode, setApplyMode] = useState<AttendanceMode>("in_person");
+  const [applySubmitting, setApplySubmitting] = useState(false);
+
+  const [feedbackRating, setFeedbackRating] = useState("5");
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -125,14 +145,26 @@ export default function EventManagementPage() {
   ]);
   const canReadEventStats = hasPermission(user, "event.stats.read");
 
-  const canAccessManagement =
-    canUpdateEvent ||
-    canDeleteEvent ||
-    canDecideApplications ||
-    canHandleAttendance ||
-    canReadEventStats;
+  const canSeeApplicationsTab = canDecideApplications || canHandleAttendance;
+  const canSeeAttendanceTab = canHandleAttendance;
+  const canSeeStatsTab = canReadEventStats;
 
-  const currentTab = getManagementTabFromSearchParams(searchParams);
+  const requestedTab = getManagementTabFromSearchParams(searchParams);
+
+  const currentTab: EventManagementTab =
+    requestedTab === "applications" && !canSeeApplicationsTab
+      ? "overview"
+      : requestedTab === "attendance" && !canSeeAttendanceTab
+        ? "overview"
+        : requestedTab === "stats" && !canSeeStatsTab
+          ? "overview"
+          : requestedTab;
+
+  useEffect(() => {
+    if (requestedTab !== currentTab) {
+      setSearchParams({ tab: currentTab }, { replace: true });
+    }
+  }, [requestedTab, currentTab, setSearchParams]);
 
   async function loadData(showRefresh = false) {
     if (!eventId) {
@@ -148,12 +180,12 @@ export default function EventManagementPage() {
 
       setError(null);
       setActionError(null);
+      setApplicationError(null);
 
       const eventPromise = getEvent(eventId);
-      const appsPromise =
-        canDecideApplications || canHandleAttendance
-          ? listEventApplications(eventId)
-          : Promise.resolve(null);
+      const appsPromise = canSeeApplicationsTab
+        ? listEventApplications(eventId)
+        : Promise.resolve(null);
       const statsPromise = canReadEventStats
         ? getEventStats(eventId)
         : Promise.resolve(null);
@@ -167,6 +199,22 @@ export default function EventManagementPage() {
       setEventData(eventResult);
       setApplications(appsResult?.items ?? []);
       setStats(statsResult);
+
+      try {
+        setApplicationLoading(true);
+        const myApplicationResult = await getMyEventApplication(eventId);
+        setMyApplication(myApplicationResult);
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response?.status === 404) {
+          setMyApplication(null);
+        } else {
+          setApplicationError(
+            eventStrings.messages.failedToLoadApplicationStatus,
+          );
+        }
+      } finally {
+        setApplicationLoading(false);
+      }
     } catch (err) {
       setError(
         extractEventApiErrorMessage(
@@ -194,12 +242,6 @@ export default function EventManagementPage() {
       return;
     }
 
-    if (!canAccessManagement) {
-      setError(eventStrings.messages.noManagementPermission);
-      setLoading(false);
-      return;
-    }
-
     if (!eventId) {
       setError(eventStrings.messages.missingEventId);
       setLoading(false);
@@ -210,10 +252,8 @@ export default function EventManagementPage() {
   }, [
     authLoading,
     canReadEvents,
-    canAccessManagement,
+    canSeeApplicationsTab,
     canReadEventStats,
-    canDecideApplications,
-    canHandleAttendance,
     eventId,
   ]);
 
@@ -231,6 +271,12 @@ export default function EventManagementPage() {
     return filteredApplications.filter((item) => item.decision_status === "pending");
   }, [filteredApplications]);
 
+  const acceptedApplications = useMemo(() => {
+    return filteredApplications.filter(
+      (item) => item.decision_status === "accepted",
+    );
+  }, [filteredApplications]);
+
   const topNNumber = Number(topN);
   const topNPending =
     Number.isInteger(topNNumber) && topNNumber > 0
@@ -239,7 +285,17 @@ export default function EventManagementPage() {
 
   const attendanceEnabledForEvent = eventData ? canManageAttendance(eventData) : false;
 
-  const handleTabChange = (_: React.SyntheticEvent, value: EventManagementTab) => {
+  const eventStatus = useMemo(() => {
+    if (!eventData) {
+      return null;
+    }
+
+    return getEventTimeStatus(eventData);
+  }, [eventData]);
+
+  const canStillApply = eventStatus === "upcoming" || eventStatus === "ongoing";
+
+  const handleTabChange = (_: SyntheticEvent, value: EventManagementTab) => {
     setSearchParams({ tab: value });
   };
 
@@ -262,6 +318,10 @@ export default function EventManagementPage() {
       setApplications((current) =>
         current.map((item) => (item.member_id === memberId ? updated : item)),
       );
+
+      if (myApplication?.member_id === memberId) {
+        setMyApplication(updated);
+      }
     } catch (err) {
       setActionError(
         extractEventApiErrorMessage(
@@ -293,6 +353,10 @@ export default function EventManagementPage() {
       setApplications((current) =>
         current.map((item) => (item.member_id === memberId ? updated : item)),
       );
+
+      if (myApplication?.member_id === memberId) {
+        setMyApplication(updated);
+      }
     } catch (err) {
       setActionError(
         extractEventApiErrorMessage(
@@ -324,6 +388,10 @@ export default function EventManagementPage() {
             row.member_id === item.member_id ? updated : row,
           ),
         );
+
+        if (myApplication?.member_id === item.member_id) {
+          setMyApplication(updated);
+        }
       }
     } catch (err) {
       setActionError(
@@ -334,6 +402,66 @@ export default function EventManagementPage() {
       );
     } finally {
       setBulkBusy(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!eventId || !canStillApply) {
+      return;
+    }
+
+    try {
+      setApplySubmitting(true);
+      setApplicationError(null);
+
+      const updated = await applyToEvent(eventId, {
+        attendance_mode: applyMode,
+      });
+
+      setMyApplication(updated);
+    } catch (err) {
+      setApplicationError(
+        extractEventApiErrorMessage(
+          err,
+          eventStrings.messages.failedToSubmitApplication,
+        ),
+      );
+    } finally {
+      setApplySubmitting(false);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!eventId || !eventData) {
+      return;
+    }
+
+    const rating = Number(feedbackRating);
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      setApplicationError(eventStrings.messages.invalidFeedbackRating);
+      return;
+    }
+
+    try {
+      setFeedbackSubmitting(true);
+      setApplicationError(null);
+
+      const updated = await submitMyEventFeedback(eventId, {
+        rating,
+        comment: feedbackComment.trim() || null,
+      });
+
+      setMyApplication(updated);
+    } catch (err) {
+      setApplicationError(
+        extractEventApiErrorMessage(
+          err,
+          eventStrings.messages.failedToSubmitFeedback,
+        ),
+      );
+    } finally {
+      setFeedbackSubmitting(false);
     }
   };
 
@@ -383,9 +511,9 @@ export default function EventManagementPage() {
             <Button
               variant="outlined"
               startIcon={<ArrowBackIcon />}
-              onClick={() => navigate(`/events/${eventId}`)}
+              onClick={() => navigate("/events")}
             >
-              {eventStrings.actions.backToEvent}
+              {eventStrings.actions.backToEvents}
             </Button>
 
             <Button
@@ -418,13 +546,13 @@ export default function EventManagementPage() {
                 allowScrollButtonsMobile
               >
                 <Tab value="overview" label={eventStrings.tabs.overview} />
-                {(canDecideApplications || canHandleAttendance) && (
+                {canSeeApplicationsTab && (
                   <Tab value="applications" label={eventStrings.tabs.applications} />
                 )}
-                {canHandleAttendance && (
+                {canSeeAttendanceTab && (
                   <Tab value="attendance" label={eventStrings.tabs.attendance} />
                 )}
-                {canReadEventStats && (
+                {canSeeStatsTab && (
                   <Tab value="stats" label={eventStrings.tabs.stats} />
                 )}
               </Tabs>
@@ -462,6 +590,10 @@ export default function EventManagementPage() {
                         {formatEventDateTime(eventData.end_datetime)}
                       </Typography>
                       <Typography>
+                        <strong>{eventStrings.labels.status}:</strong>{" "}
+                        {eventStatus ? getEventStatusLabel(eventStatus) : "—"}
+                      </Typography>
+                      <Typography>
                         <strong>{eventStrings.labels.speaker}:</strong>{" "}
                         {eventData.speaker_name || "—"}
                       </Typography>
@@ -475,12 +607,15 @@ export default function EventManagementPage() {
                       <Stack
                         direction={{ xs: "column", sm: "row" }}
                         spacing={1.5}
+                        sx={{ pt: 1 }}
                       >
                         {canUpdateEvent && (
                           <Button
                             variant="outlined"
                             startIcon={<EditIcon />}
-                            onClick={() => navigate(`/events/${eventData.event_id}/edit`)}
+                            onClick={() =>
+                              navigate(`/events/${eventData.event_id}/edit`)
+                            }
                           >
                             {eventStrings.actions.editEvent}
                           </Button>
@@ -501,45 +636,202 @@ export default function EventManagementPage() {
                   </Stack>
                 </Paper>
 
-                {canReadEventStats && stats && (
-                  <Stack direction="row" flexWrap="wrap" gap={2}>
-                    <StatCard
-                      label={eventStrings.labels.totalApplications}
-                      value={stats.total_applications}
-                    />
-                    <StatCard
-                      label={eventStrings.labels.accepted}
-                      value={stats.accepted}
-                    />
-                    <StatCard
-                      label={eventStrings.labels.pending}
-                      value={stats.pending}
-                    />
-                    <StatCard
-                      label={eventStrings.labels.attended}
-                      value={stats.attended}
-                    />
-                    <StatCard
-                      label={eventStrings.labels.noShow}
-                      value={stats.no_show}
-                    />
+                <Paper sx={{ p: 3 }}>
+                  <Stack spacing={2}>
+                    <Typography variant="h6">
+                      {eventStrings.sections.myParticipation}
+                    </Typography>
+
+                    {applicationLoading && (
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                        <CircularProgress size={20} />
+                        <Typography>
+                          {eventStrings.messages.loadingApplication}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {!applicationLoading && applicationError && (
+                      <Alert severity="error">{applicationError}</Alert>
+                    )}
+
+                    {!applicationLoading && !myApplication && canStillApply && (
+                      <Stack spacing={2}>
+                        <Typography color="text.secondary">
+                          {eventStrings.empty.noApplication}
+                        </Typography>
+
+                        <TextField
+                          select
+                          label={eventStrings.labels.attendanceMode}
+                          value={applyMode}
+                          onChange={(event) =>
+                            setApplyMode(event.target.value as AttendanceMode)
+                          }
+                          sx={{ maxWidth: 280 }}
+                        >
+                          <MenuItem value="in_person">
+                            {eventStrings.statuses.inPerson}
+                          </MenuItem>
+                          <MenuItem value="online">
+                            {eventStrings.statuses.online}
+                          </MenuItem>
+                        </TextField>
+
+                        <Box>
+                          <Button
+                            variant="contained"
+                            startIcon={<SendIcon />}
+                            onClick={() => void handleApply()}
+                            disabled={applySubmitting}
+                          >
+                            {applySubmitting
+                              ? eventStrings.actions.submitting
+                              : eventStrings.actions.apply}
+                          </Button>
+                        </Box>
+                      </Stack>
+                    )}
+
+                    {!applicationLoading && !myApplication && !canStillApply && (
+                      <Alert severity="info">
+                        {eventStrings.messages.attendanceAvailableAfterEnd}
+                      </Alert>
+                    )}
+
+                    {!applicationLoading && myApplication && (
+                      <Stack spacing={1.5}>
+                        <Typography>
+                          <strong>{eventStrings.labels.decision}:</strong>{" "}
+                          {getDecisionStatusLabel(myApplication.decision_status)}
+                        </Typography>
+                        <Typography>
+                          <strong>{eventStrings.labels.attendanceStatus}:</strong>{" "}
+                          {getAttendanceStatusLabel(myApplication.attendance_status)}
+                        </Typography>
+                        <Typography>
+                          <strong>{eventStrings.labels.attendanceMode}:</strong>{" "}
+                          {getAttendanceModeLabel(myApplication.attendance_mode)}
+                        </Typography>
+                        <Typography>
+                          <strong>{eventStrings.labels.appliedAt}:</strong>{" "}
+                          {formatEventDateTime(myApplication.applied_at)}
+                        </Typography>
+
+                        {myApplication.feedback_submitted_at && (
+                          <Typography>
+                            <strong>{eventStrings.labels.feedbackSubmitted}:</strong>{" "}
+                            {formatEventDateTime(myApplication.feedback_submitted_at)}
+                          </Typography>
+                        )}
+
+                        {canSubmitFeedback(eventData, myApplication) && (
+                          <>
+                            <Divider />
+                            <Typography variant="subtitle1">
+                              {eventStrings.sections.submitFeedback}
+                            </Typography>
+
+                            <TextField
+                              label={eventStrings.labels.rating}
+                              type="number"
+                              value={feedbackRating}
+                              onChange={(event) => setFeedbackRating(event.target.value)}
+                              inputProps={{ min: 1, max: 5 }}
+                              sx={{ maxWidth: 200 }}
+                            />
+
+                            <TextField
+                              label={eventStrings.labels.comment}
+                              value={feedbackComment}
+                              onChange={(event) => setFeedbackComment(event.target.value)}
+                              multiline
+                              minRows={3}
+                              fullWidth
+                            />
+
+                            <Box>
+                              <Button
+                                variant="contained"
+                                startIcon={<SendIcon />}
+                                onClick={() => void handleSubmitFeedback()}
+                                disabled={feedbackSubmitting}
+                              >
+                                {feedbackSubmitting
+                                  ? eventStrings.actions.submitting
+                                  : eventStrings.actions.submitFeedback}
+                              </Button>
+                            </Box>
+                          </>
+                        )}
+                      </Stack>
+                    )}
                   </Stack>
+                </Paper>
+
+                {canReadEventStats && (
+                  <Paper sx={{ p: 3 }}>
+                    <Stack spacing={2}>
+                      <Typography variant="h6">
+                        {eventStrings.sections.quickStats}
+                      </Typography>
+
+                      {stats ? (
+                        <Stack
+                          direction="row"
+                          spacing={2}
+                          useFlexGap
+                          flexWrap="wrap"
+                        >
+                          <StatCard
+                            label={eventStrings.labels.totalApplications}
+                            value={stats.total_applications}
+                          />
+                          <StatCard
+                            label={eventStrings.labels.accepted}
+                            value={stats.accepted}
+                          />
+                          <StatCard
+                            label={eventStrings.labels.pending}
+                            value={stats.pending}
+                          />
+                          <StatCard
+                            label={eventStrings.labels.attended}
+                            value={stats.attended}
+                          />
+                          <StatCard
+                            label={eventStrings.labels.noShow}
+                            value={stats.no_show}
+                          />
+                        </Stack>
+                      ) : (
+                        <Typography color="text.secondary">
+                          {eventStrings.empty.noData}
+                        </Typography>
+                      )}
+                    </Stack>
+                  </Paper>
                 )}
               </Stack>
             )}
 
-            {currentTab === "applications" &&
-              (canDecideApplications || canHandleAttendance) && (
-                <Stack spacing={3}>
-                  <Paper sx={{ p: 3 }}>
+            {currentTab === "applications" && canSeeApplicationsTab && (
+              <Stack spacing={3}>
+                <Paper sx={{ p: 3 }}>
+                  <Stack spacing={2}>
+                    <Typography variant="h6">
+                      {eventStrings.sections.applicationsManagement}
+                    </Typography>
+
                     <Stack
-                      direction={{ xs: "column", lg: "row" }}
-                      spacing={2}
-                      alignItems={{ xs: "stretch", lg: "center" }}
+                      direction={{ xs: "column", md: "row" }}
+                      spacing={1.5}
                     >
                       <TextField
                         label={eventStrings.filters.searchApplications}
-                        placeholder={eventStrings.filters.searchApplicationsPlaceholder}
+                        placeholder={
+                          eventStrings.filters.searchApplicationsPlaceholder
+                        }
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                         fullWidth
@@ -552,7 +844,7 @@ export default function EventManagementPage() {
                         onChange={(event) =>
                           setSortDirection(event.target.value as SortDirection)
                         }
-                        sx={{ minWidth: 240 }}
+                        sx={{ minWidth: 220 }}
                       >
                         <MenuItem value="newest">
                           {eventStrings.filters.orderNewest}
@@ -569,169 +861,244 @@ export default function EventManagementPage() {
                         {eventStrings.filters.onlyPending}
                       </Button>
                     </Stack>
+                  </Stack>
+                </Paper>
 
-                    {canDecideApplications && (
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        spacing={1}
-                        sx={{ mt: 2 }}
-                      >
-                        <Button
-                          variant="outlined"
-                          onClick={() => void handleApproveMany(pendingApplications)}
-                          disabled={bulkBusy || pendingApplications.length === 0}
-                        >
-                          {bulkBusy
-                            ? eventStrings.actions.submitting
-                            : eventStrings.actions.approveAllPending}
-                        </Button>
+                {canDecideApplications && pendingApplications.length > 0 && (
+                  <Paper sx={{ p: 3 }}>
+                    <Stack spacing={2}>
+                      <Typography variant="h6">
+                        {eventStrings.actions.approveTopPending}
+                      </Typography>
 
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                         <TextField
                           label={eventStrings.filters.topN}
                           type="number"
                           value={topN}
                           onChange={(event) => setTopN(event.target.value)}
                           inputProps={{ min: 1 }}
-                          sx={{ width: 120 }}
+                          sx={{ maxWidth: 160 }}
                         />
 
                         <Button
-                          variant="outlined"
+                          variant="contained"
                           onClick={() => void handleApproveMany(topNPending)}
                           disabled={bulkBusy || topNPending.length === 0}
                         >
-                          {eventStrings.actions.approveTopPending}
+                          {bulkBusy
+                            ? eventStrings.actions.submitting
+                            : eventStrings.actions.approveTopPending}
                         </Button>
                       </Stack>
-                    )}
-                  </Paper>
-
-                  {filteredApplications.length === 0 ? (
-                    <Paper sx={{ p: 3 }}>
-                      <Typography>{eventStrings.empty.noApplications}</Typography>
-                    </Paper>
-                  ) : (
-                    <Stack spacing={2}>
-                      {filteredApplications.map((application) => (
-                        <Paper key={application.member_id} sx={{ p: 3 }}>
-                          <Stack spacing={1.5}>
-                            <Typography variant="h6">
-                              {eventStrings.labels.memberId}: {application.member_id}
-                            </Typography>
-
-                            <Typography>
-                              <strong>{eventStrings.labels.appliedAt}:</strong>{" "}
-                              {formatEventDateTime(application.applied_at)}
-                            </Typography>
-
-                            <Typography>
-                              <strong>{eventStrings.labels.decision}:</strong>{" "}
-                              {getDecisionStatusLabel(application.decision_status)}
-                            </Typography>
-
-                            <Typography>
-                              <strong>{eventStrings.labels.attendanceStatus}:</strong>{" "}
-                              {getAttendanceStatusLabel(application.attendance_status)}
-                            </Typography>
-
-                            <Typography>
-                              <strong>{eventStrings.labels.attendanceMode}:</strong>{" "}
-                              {getAttendanceModeLabel(application.attendance_mode)}
-                            </Typography>
-
-                            {application.feedback_submitted_at && (
-                              <Typography>
-                                <strong>{eventStrings.labels.feedbackSubmitted}:</strong>{" "}
-                                {formatEventDateTime(application.feedback_submitted_at)}
-                              </Typography>
-                            )}
-
-                            {canDecideApplications && (
-                              <TextField
-                                select
-                                label={eventStrings.labels.updateDecision}
-                                value={application.decision_status}
-                                onChange={(event) =>
-                                  void handleDecision(
-                                    application.member_id,
-                                    event.target.value as DecisionStatus,
-                                  )
-                                }
-                                disabled={busyMemberId === application.member_id}
-                                sx={{ maxWidth: 280 }}
-                              >
-                                {decisionOptions.map((option) => (
-                                  <MenuItem key={option} value={option}>
-                                    {getDecisionStatusLabel(option)}
-                                  </MenuItem>
-                                ))}
-                              </TextField>
-                            )}
-                          </Stack>
-                        </Paper>
-                      ))}
                     </Stack>
-                  )}
-                </Stack>
-              )}
-
-            {currentTab === "attendance" && canHandleAttendance && (
-              <Stack spacing={3}>
-                {!attendanceEnabledForEvent && (
-                  <Alert severity="info">
-                    {eventStrings.messages.attendanceAvailableOneHourBeforeStart}
-                  </Alert>
+                  </Paper>
                 )}
 
-                {filteredApplications.length === 0 ? (
-                  <Paper sx={{ p: 3 }}>
-                    <Typography>{eventStrings.empty.noApplications}</Typography>
-                  </Paper>
-                ) : (
+                <Paper sx={{ p: 3 }}>
                   <Stack spacing={2}>
-                    {filteredApplications.map((application) => {
-                      const canChangeAttendance =
-                        eventData &&
-                        attendanceEnabledForEvent &&
-                        canManageAttendanceForApplication(eventData, application);
+                    {filteredApplications.length === 0 ? (
+                      <Typography color="text.secondary">
+                        {eventStrings.empty.noApplications}
+                      </Typography>
+                    ) : (
+                      filteredApplications.map((application) => {
+                        const attendanceAllowed =
+                          eventData &&
+                          canManageAttendanceForApplication(eventData, application);
 
-                      return (
-                        <Paper key={application.member_id} sx={{ p: 3 }}>
-                          <Stack spacing={1.5}>
-                            <Typography variant="h6">
-                              {eventStrings.labels.memberId}: {application.member_id}
-                            </Typography>
+                        return (
+                          <Paper
+                            key={application.member_id}
+                            variant="outlined"
+                            sx={{ p: 2 }}
+                          >
+                            <Stack spacing={1.5}>
+                              <Stack
+                                direction={{ xs: "column", md: "row" }}
+                                justifyContent="space-between"
+                                spacing={1}
+                              >
+                                <Box>
+                                  <Typography fontWeight={600}>
+                                    {eventStrings.labels.memberId}: {application.member_id}
+                                  </Typography>
+                                </Box>
 
-                            <Typography>
-                              <strong>{eventStrings.labels.decision}:</strong>{" "}
-                              {getDecisionStatusLabel(application.decision_status)}
-                            </Typography>
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  spacing={1}
+                                >
+                                  <Chip
+                                    label={getDecisionStatusLabel(
+                                      application.decision_status,
+                                    )}
+                                  />
+                                  <Chip
+                                    label={getAttendanceStatusLabel(
+                                      application.attendance_status,
+                                    )}
+                                  />
+                                </Stack>
+                              </Stack>
 
-                            <Typography>
-                              <strong>{eventStrings.labels.attendanceStatus}:</strong>{" "}
-                              {getAttendanceStatusLabel(application.attendance_status)}
-                            </Typography>
+                              <Typography variant="body2">
+                                <strong>{eventStrings.labels.attendanceMode}:</strong>{" "}
+                                {getAttendanceModeLabel(application.attendance_mode)}
+                              </Typography>
 
-                            <Typography>
-                              <strong>{eventStrings.labels.attendanceMode}:</strong>{" "}
-                              {getAttendanceModeLabel(application.attendance_mode)}
-                            </Typography>
+                              <Typography variant="body2">
+                                <strong>{eventStrings.labels.appliedAt}:</strong>{" "}
+                                {formatEventDateTime(application.applied_at)}
+                              </Typography>
+
+                              {application.feedback_submitted_at && (
+                                <Typography variant="body2">
+                                  <strong>{eventStrings.labels.feedbackSubmitted}:</strong>{" "}
+                                  {formatEventDateTime(application.feedback_submitted_at)}
+                                </Typography>
+                              )}
+
+                              {canDecideApplications && (
+                                <TextField
+                                  select
+                                  label={eventStrings.labels.updateDecision}
+                                  value={application.decision_status}
+                                  onChange={(event) =>
+                                    void handleDecision(
+                                      application.member_id,
+                                      event.target.value as DecisionStatus,
+                                    )
+                                  }
+                                  disabled={busyMemberId === application.member_id}
+                                  sx={{ maxWidth: 260 }}
+                                >
+                                  {decisionOptions.map((option) => (
+                                    <MenuItem key={option} value={option}>
+                                      {getDecisionStatusLabel(option)}
+                                    </MenuItem>
+                                  ))}
+                                </TextField>
+                              )}
+
+                              {canHandleAttendance && (
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  spacing={1}
+                                >
+                                  <Button
+                                    variant="outlined"
+                                    disabled={
+                                      busyMemberId === application.member_id ||
+                                      !attendanceEnabledForEvent ||
+                                      !attendanceAllowed
+                                    }
+                                    onClick={() =>
+                                      void handleAttendance(
+                                        application.member_id,
+                                        "attended",
+                                      )
+                                    }
+                                  >
+                                    {eventStrings.actions.markAttended}
+                                  </Button>
+
+                                  <Button
+                                    variant="outlined"
+                                    color="warning"
+                                    disabled={
+                                      busyMemberId === application.member_id ||
+                                      !attendanceEnabledForEvent ||
+                                      !attendanceAllowed
+                                    }
+                                    onClick={() =>
+                                      void handleAttendance(
+                                        application.member_id,
+                                        "no_show",
+                                      )
+                                    }
+                                  >
+                                    {eventStrings.actions.markNoShow}
+                                  </Button>
+                                </Stack>
+                              )}
+                            </Stack>
+                          </Paper>
+                        );
+                      })
+                    )}
+                  </Stack>
+                </Paper>
+              </Stack>
+            )}
+
+            {currentTab === "attendance" && canSeeAttendanceTab && (
+              <Stack spacing={3}>
+                <Paper sx={{ p: 3 }}>
+                  <Stack spacing={2}>
+                    <Typography variant="h6">
+                      {eventStrings.sections.attendanceManagement}
+                    </Typography>
+
+                    {!attendanceEnabledForEvent && (
+                      <Alert severity="info">
+                        {eventStrings.messages.attendanceAvailableOneHourBeforeStart}
+                      </Alert>
+                    )}
+
+                    {acceptedApplications.length === 0 ? (
+                      <Typography color="text.secondary">
+                        {eventStrings.empty.noApplications}
+                      </Typography>
+                    ) : (
+                      acceptedApplications.map((application) => (
+                        <Paper
+                          key={application.member_id}
+                          variant="outlined"
+                          sx={{ p: 2 }}
+                        >
+                          <Stack
+                            direction={{ xs: "column", md: "row" }}
+                            justifyContent="space-between"
+                            spacing={2}
+                          >
+                            <Box>
+                              <Typography fontWeight={600}>
+                                {eventStrings.labels.memberId}: {application.member_id}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                {eventStrings.labels.attendanceMode}:{" "}
+                                {getAttendanceModeLabel(application.attendance_mode)}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                              >
+                                {eventStrings.labels.attendanceStatus}:{" "}
+                                {getAttendanceStatusLabel(
+                                  application.attendance_status,
+                                )}
+                              </Typography>
+                            </Box>
 
                             <Stack
                               direction={{ xs: "column", sm: "row" }}
                               spacing={1}
                             >
                               <Button
-                                variant="outlined"
+                                variant="contained"
+                                disabled={
+                                  busyMemberId === application.member_id ||
+                                  !attendanceEnabledForEvent
+                                }
                                 onClick={() =>
                                   void handleAttendance(
                                     application.member_id,
                                     "attended",
                                   )
-                                }
-                                disabled={
-                                  !canChangeAttendance ||
-                                  busyMemberId === application.member_id
                                 }
                               >
                                 {eventStrings.actions.markAttended}
@@ -739,79 +1106,82 @@ export default function EventManagementPage() {
 
                               <Button
                                 variant="outlined"
+                                color="warning"
+                                disabled={
+                                  busyMemberId === application.member_id ||
+                                  !attendanceEnabledForEvent
+                                }
                                 onClick={() =>
                                   void handleAttendance(
                                     application.member_id,
                                     "no_show",
                                   )
                                 }
-                                disabled={
-                                  !canChangeAttendance ||
-                                  busyMemberId === application.member_id
-                                }
                               >
                                 {eventStrings.actions.markNoShow}
                               </Button>
                             </Stack>
-
-                            {!attendanceEnabledForEvent && (
-                              <Typography variant="body2" color="text.secondary">
-                                {eventStrings.messages.attendanceAvailableOneHourBeforeStart}
-                              </Typography>
-                            )}
-
-                            {attendanceEnabledForEvent &&
-                              application.decision_status !== "accepted" && (
-                                <Typography variant="body2" color="text.secondary">
-                                  {eventStrings.messages.attendanceOnlyForAccepted}
-                                </Typography>
-                              )}
                           </Stack>
                         </Paper>
-                      );
-                    })}
+                      ))
+                    )}
                   </Stack>
-                )}
+                </Paper>
               </Stack>
             )}
 
-            {currentTab === "stats" && canReadEventStats && stats && (
-              <Paper sx={{ p: 3 }}>
-                <Stack spacing={1.25}>
-                  <Typography variant="h6">Applications</Typography>
-                  <Typography>
-                    <strong>Total:</strong> {stats.total_applications}
-                  </Typography>
-                  <Typography>
-                    <strong>Accepted:</strong> {stats.accepted}
-                  </Typography>
-                  <Typography>
-                    <strong>Rejected:</strong> {stats.rejected}
-                  </Typography>
-                  <Typography>
-                    <strong>Pending:</strong> {stats.pending}
-                  </Typography>
-                  <Typography>
-                    <strong>Waitlisted:</strong> {stats.waitlisted}
-                  </Typography>
-                  <Typography>
-                    <strong>Cancelled:</strong> {stats.cancelled}
-                  </Typography>
+            {currentTab === "stats" && canSeeStatsTab && (
+              <Stack spacing={3}>
+                <Paper sx={{ p: 3 }}>
+                  <Stack spacing={2}>
+                    <Typography variant="h6">
+                      {eventStrings.tabs.stats}
+                    </Typography>
 
-                  <Box sx={{ pt: 1 }} />
-
-                  <Typography variant="h6">Attendance</Typography>
-                  <Typography>
-                    <strong>Attended:</strong> {stats.attended}
-                  </Typography>
-                  <Typography>
-                    <strong>No show:</strong> {stats.no_show}
-                  </Typography>
-                  <Typography>
-                    <strong>Unknown:</strong> {stats.unknown_attendance}
-                  </Typography>
-                </Stack>
-              </Paper>
+                    {!stats ? (
+                      <Typography color="text.secondary">
+                        {eventStrings.empty.noData}
+                      </Typography>
+                    ) : (
+                      <Stack
+                        direction="row"
+                        spacing={2}
+                        useFlexGap
+                        flexWrap="wrap"
+                      >
+                        <StatCard
+                          label={eventStrings.labels.totalApplications}
+                          value={stats.total_applications}
+                        />
+                        <StatCard
+                          label={eventStrings.labels.accepted}
+                          value={stats.accepted}
+                        />
+                        <StatCard
+                          label={eventStrings.labels.rejected}
+                          value={stats.rejected}
+                        />
+                        <StatCard
+                          label={eventStrings.labels.waitlisted}
+                          value={stats.waitlisted}
+                        />
+                        <StatCard
+                          label={eventStrings.labels.pending}
+                          value={stats.pending}
+                        />
+                        <StatCard
+                          label={eventStrings.labels.attended}
+                          value={stats.attended}
+                        />
+                        <StatCard
+                          label={eventStrings.labels.noShow}
+                          value={stats.no_show}
+                        />
+                      </Stack>
+                    )}
+                  </Stack>
+                </Paper>
+              </Stack>
             )}
           </>
         )}
