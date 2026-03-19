@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional, List
 
 from pydantic import BaseModel
@@ -81,3 +81,54 @@ class EventStats(BaseModel):
     in_person: int
 
     avg_feedback_rating: Optional[float] = None
+
+
+class EventsAnalyticsTimeseriesPoint(BaseModel):
+    day: date
+    events_count: int
+    applications: int
+    accepted: int
+    attended: int
+    no_show: int
+
+
+class EventsTopEventRow(BaseModel):
+    event_id: int
+    title: str
+    start_datetime: datetime
+    total_applications: int
+    accepted: int
+    attended: int
+    no_show: int
+    attendance_rate: float
+    no_show_rate: float
+    avg_feedback_rating: Optional[float] = None
+
+
+class EventsAnalyticsDashboard(BaseModel):
+    total_events: int
+    upcoming_events: int
+    ongoing_events: int
+    past_events: int
+
+    total_applications: int
+    accepted: int
+    rejected: int
+    pending: int
+    waitlisted: int
+    cancelled: int
+
+    attended: int
+    no_show: int
+    unknown_attendance: int
+
+    online: int
+    in_person: int
+
+    avg_feedback_rating: Optional[float] = None
+    application_acceptance_rate: float
+    attendance_rate: float
+    no_show_rate: float
+
+    timeseries: List[EventsAnalyticsTimeseriesPoint]
+    top_events: List[EventsTopEventRow]

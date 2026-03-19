@@ -1,27 +1,65 @@
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, useParams } from "react-router-dom";
 
 import AppLayout from "../components/layout/AppLayout";
 import ProtectedRoute from "../components/common/ProtectedRoute";
 import RequirePermissionRoute from "../components/common/RequirePermissionRoute";
 
-import LoginPage from "../pages/LoginPage";
-import DashboardPage from "../pages/DashboardPage";
+import LoginPage from "../features/auth/pages/LoginPage";
+import DashboardPage from "../features/dashboard/pages/DashboardPage";
 
-import MembersPage from "../pages/MembersPage";
-import MemberDetailsPage from "../pages/MemberDetailsPage";
+import MembersPage from "../features/members/pages/MembersPage";
+import MemberDetailsPage from "../features/members/pages/MemberDetailsPage";
 
-import ProjectsPage from "../pages/ProjectsPage";
-import ProjectDetailsPage from "../pages/ProjectDetailsPage";
+import ProjectsPage from "../features/projects/pages/ProjectsPage";
+import ProjectDetailsPage from "../features/projects/pages/ProjectDetailsPage";
 
-import EventsPage from "../pages/EventsPage";
-import EventCreatePage from "../pages/EventCreatePage";
-import EventDetailsPage from "../pages/EventDetailsPage";
-import EventEditPage from "../pages/EventEditPage";
-import EventApplicationsPage from "../pages/EventApplicationsPage";
-import EventAttendancePage from "../pages/EventAttendancePage";
-import EventStatsPage from "../pages/EventStatsPage";
+import EventsPage from "../features/events/pages/EventsPage";
+import EventCreatePage from "../features/events/pages/EventCreatePage";
+import EventEditPage from "../features/events/pages/EventEditPage";
+import EventAnalyticsPage from "../features/events/pages/EventAnalyticsPage";
+import EventManagementPage from "../features/events/pages/EventManagementPage";
 
 import NotFoundPage from "../pages/NotFoundPage";
+
+function EventOverviewRedirect() {
+  const { eventId } = useParams();
+
+  if (!eventId) {
+    return <Navigate to="/events" replace />;
+  }
+
+  return <Navigate to={`/events/${eventId}/manage?tab=overview`} replace />;
+}
+
+function EventApplicationsRedirect() {
+  const { eventId } = useParams();
+
+  if (!eventId) {
+    return <Navigate to="/events" replace />;
+  }
+
+  return <Navigate to={`/events/${eventId}/manage?tab=applications`} replace />;
+}
+
+function EventAttendanceRedirect() {
+  const { eventId } = useParams();
+
+  if (!eventId) {
+    return <Navigate to="/events" replace />;
+  }
+
+  return <Navigate to={`/events/${eventId}/manage?tab=attendance`} replace />;
+}
+
+function EventStatsRedirect() {
+  const { eventId } = useParams();
+
+  if (!eventId) {
+    return <Navigate to="/events" replace />;
+  }
+
+  return <Navigate to={`/events/${eventId}/manage?tab=stats`} replace />;
+}
 
 export const router = createBrowserRouter([
   {
@@ -96,10 +134,18 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "events/analytics",
+        element: (
+          <RequirePermissionRoute permissions={["event.stats.read"]}>
+            <EventAnalyticsPage />
+          </RequirePermissionRoute>
+        ),
+      },
+      {
         path: "events/:eventId",
         element: (
           <RequirePermissionRoute permissions={["event.read"]}>
-            <EventDetailsPage />
+            <EventOverviewRedirect />
           </RequirePermissionRoute>
         ),
       },
@@ -112,10 +158,26 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "events/:eventId/manage",
+        element: (
+          <RequirePermissionRoute
+            permissions={[
+              "event.update",
+              "event.delete",
+              "event.decide",
+              "event.attendance",
+              "event.stats.read",
+            ]}
+          >
+            <EventManagementPage />
+          </RequirePermissionRoute>
+        ),
+      },
+      {
         path: "events/:eventId/applications",
         element: (
           <RequirePermissionRoute permissions={["event.decide"]}>
-            <EventApplicationsPage />
+            <EventApplicationsRedirect />
           </RequirePermissionRoute>
         ),
       },
@@ -123,7 +185,7 @@ export const router = createBrowserRouter([
         path: "events/:eventId/attendance",
         element: (
           <RequirePermissionRoute permissions={["event.attendance", "event.decide"]}>
-            <EventAttendancePage />
+            <EventAttendanceRedirect />
           </RequirePermissionRoute>
         ),
       },
@@ -131,7 +193,7 @@ export const router = createBrowserRouter([
         path: "events/:eventId/stats",
         element: (
           <RequirePermissionRoute permissions={["event.stats.read"]}>
-            <EventStatsPage />
+            <EventStatsRedirect />
           </RequirePermissionRoute>
         ),
       },

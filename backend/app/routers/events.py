@@ -7,6 +7,8 @@ from app.core.dependencies import get_db
 from app.core.permissions import require_permissions
 from app.models.member import Member as MemberModel
 
+from datetime import datetime
+
 from app.schemas.event import (
     EventCreate,
     EventUpdate,
@@ -25,6 +27,9 @@ from app.schemas.event_stats import (
     EventAttendanceResponse,
     EventAttendanceRow,
     EventStats,
+    EventsAnalyticsDashboard,
+    EventsAnalyticsTimeseriesPoint,
+    EventsTopEventRow,
 )
 
 from app.services.event_service import EventService
@@ -47,6 +52,50 @@ def _to_out(ev) -> EventOut:
         created_at=ev.created_at,
     )
 
+@router.get("/analytics/dashboard", response_model=EventsAnalyticsDashboard)
+def get_events_dashboard(
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    top_limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _auth: MemberModel = Depends(require_permissions("event.stats.read")),
+):
+    payload = EventStatsService.events_dashboard(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        top_limit=top_limit,
+    )
+
+    return EventsAnalyticsDashboard(
+        **payload["overview"],
+        timeseries=[
+            EventsAnalyticsTimeseriesPoint(
+                day=row.day,
+                events_count=int(row.events_count or 0),
+                applications=int(row.applications or 0),
+                accepted=int(row.accepted or 0),
+                attended=int(row.attended or 0),
+                no_show=int(row.no_show or 0),
+            )
+            for row in payload["timeseries"]
+        ],
+        top_events=[
+            EventsTopEventRow(
+                event_id=row.event_id,
+                title=row.title,
+                start_datetime=row.start_datetime,
+                total_applications=int(row.total_applications or 0),
+                accepted=int(row.accepted or 0),
+                attended=int(row.attended or 0),
+                no_show=int(row.no_show or 0),
+                attendance_rate=(int(row.attended or 0) / int(row.accepted or 0)) if int(row.accepted or 0) else 0.0,
+                no_show_rate=(int(row.no_show or 0) / int(row.accepted or 0)) if int(row.accepted or 0) else 0.0,
+                avg_feedback_rating=float(row.avg_feedback_rating) if row.avg_feedback_rating is not None else None,
+            )
+            for row in payload["top_events"]
+        ],
+    )
 
 @router.get("", response_model=EventListResponse)
 def list_events(

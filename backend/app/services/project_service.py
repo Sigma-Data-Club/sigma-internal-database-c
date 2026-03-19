@@ -559,7 +559,7 @@ class ProjectService:
                 func.sum(
                     case(
                         (
-                            FinanceTransaction.transaction_type == FinanceTransactionType.income,
+                            FinanceTransaction.type == FinanceTransactionType.income,
                             FinanceTransaction.amount_cents,
                         ),
                         else_=0,
@@ -571,7 +571,7 @@ class ProjectService:
                 func.sum(
                     case(
                         (
-                            FinanceTransaction.transaction_type == FinanceTransactionType.expense,
+                            FinanceTransaction.type == FinanceTransactionType.expense,
                             FinanceTransaction.amount_cents,
                         ),
                         else_=0,
