@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from app.core.auth_dependencies import get_current_session
+from app.core.auth_dependencies import get_current_session, require_active_member
 from app.models.auth_session import AuthSession
+from app.models.member import Member
 from app.core.dependencies import get_db
 from app.schemas.auth import (
+    AuthAccessProfileResponse,
     LoginRequest,
     TokenResponse,
     RefreshRequest,
@@ -57,3 +59,11 @@ def logout_all(
 ):
     revoked = AuthService.logout_all(db, member_id=session.member_id)
     return LogoutAllResponse(status="ok", revoked_sessions=revoked)
+
+@router.get("/me/access-profile", response_model=AuthAccessProfileResponse)
+def get_my_access_profile(
+    current: Member = Depends(require_active_member),
+    db: Session = Depends(get_db),
+):
+    data = AuthService.get_my_access_profile(db, member_id=current.member_id)
+    return AuthAccessProfileResponse(**data)

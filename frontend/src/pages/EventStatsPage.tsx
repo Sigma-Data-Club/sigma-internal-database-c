@@ -12,19 +12,34 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 
 import { getEvent, getEventStats } from "../api/events";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { Event, EventStats } from "../types/event";
 
 export default function EventStatsPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [eventData, setEventData] = useState<Event | null>(null);
   const [stats, setStats] = useState<EventStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const canReadEventStats = hasPermission(user, "event.stats.read");
+
   useEffect(() => {
     async function loadData() {
+      if (authLoading) {
+        return;
+      }
+
+      if (!canReadEventStats) {
+        setError("You do not have permission to view event statistics.");
+        setLoading(false);
+        return;
+      }
+
       if (!eventId) {
         setError("Event ID is missing.");
         setLoading(false);
@@ -59,7 +74,7 @@ export default function EventStatsPage() {
     }
 
     void loadData();
-  }, [eventId]);
+  }, [eventId, authLoading, canReadEventStats]);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -111,23 +126,7 @@ export default function EventStatsPage() {
               <Typography variant="h6">Attendance</Typography>
               <Typography><strong>Attended:</strong> {stats.attended}</Typography>
               <Typography><strong>No show:</strong> {stats.no_show}</Typography>
-              <Typography>
-                <strong>Unknown attendance:</strong> {stats.unknown_attendance}
-              </Typography>
-
-              <Box sx={{ pt: 1 }} />
-
-              <Typography variant="h6">Modes</Typography>
-              <Typography><strong>Online:</strong> {stats.online}</Typography>
-              <Typography><strong>In person:</strong> {stats.in_person}</Typography>
-
-              <Box sx={{ pt: 1 }} />
-
-              <Typography variant="h6">Feedback</Typography>
-              <Typography>
-                <strong>Average rating:</strong>{" "}
-                {stats.avg_feedback_rating ?? "—"}
-              </Typography>
+              <Typography><strong>Unknown:</strong> {stats.unknown_attendance}</Typography>
             </Stack>
           </Paper>
         )}

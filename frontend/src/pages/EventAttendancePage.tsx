@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   MenuItem,
   Paper,
@@ -14,24 +15,23 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
+  decideEventApplication,
   getEvent,
-  listEventAttendance,
-  updateEventAttendance,
+  listEventApplications,
 } from "../api/events";
-import type {
-  AttendanceMode,
-  AttendanceStatus,
-  Event,
-  EventAttendanceRow,
-} from "../types/event";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
+import type { DecisionStatus, Event, EventApplication } from "../types/event";
 
-const attendanceStatuses: AttendanceStatus[] = [
-  "unknown",
-  "attended",
-  "no_show",
+const decisionOptions: DecisionStatus[] = [
+  "pending",
+  "accepted",
+  "rejected",
+  "waitlisted",
+  "cancelled",
 ];
 
-const attendanceModes: AttendanceMode[] = ["in_person", "online"];
+type SortDirection = "newest" | "oldest";
 
 function formatDateTime(value: string | null): string {
   if (!value) {
@@ -47,27 +47,35 @@ function formatDateTime(value: string | null): string {
   return date.toLocaleString();
 }
 
-function hasEventEnded(event: Event): boolean {
-  if (!event.end_datetime) {
-    return new Date(event.start_datetime) < new Date();
-  }
-
-  return new Date(event.end_datetime) < new Date();
-}
-
-export default function EventAttendancePage() {
+export default function EventApplicationsPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [eventData, setEventData] = useState<Event | null>(null);
-  const [rows, setRows] = useState<EventAttendanceRow[]>([]);
+  const [applications, setApplications] = useState<EventApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("newest");
+  const [topN, setTopN] = useState("5");
+
+  const canDecideApplications = hasPermission(user, "event.decide");
 
   useEffect(() => {
     async function loadData() {
+      if (authLoading) {
+        return;
+      }
+
+      if (!canDecideApplications) {
+        setError("You do not have permission to manage event applications.");
+        setLoading(false);
+        return;
+      }
+
       if (!eventId) {
         setError("Event ID is missing.");
         setLoading(false);
@@ -79,31 +87,24 @@ export default function EventAttendancePage() {
         setError(null);
         setActionError(null);
 
-        const eventResult = await getEvent(eventId);
+        const [eventResult, applicationsResult] = await Promise.all([
+          getEvent(eventId),
+          listEventApplications(eventId),
+        ]);
+
         setEventData(eventResult);
-
-        if (!hasEventEnded(eventResult)) {
-          setRows([]);
-          return;
-        }
-
-        const attendanceResult = await listEventAttendance(eventId);
-        setRows(
-          attendanceResult.items.filter(
-            (row) => row.decision_status === "accepted",
-          ),
-        );
+        setApplications(applicationsResult.items);
       } catch (err) {
         if (axios.isAxiosError(err)) {
           const detail = err.response?.data?.detail;
           const message =
             typeof detail === "string"
               ? detail
-              : detail?.message ?? "Failed to load attendance.";
+              : detail?.message ?? "Failed to load event applications.";
 
           setError(message);
         } else {
-          setError("Failed to load attendance.");
+          setError("Failed to load event applications.");
         }
       } finally {
         setLoading(false);
@@ -111,19 +112,24 @@ export default function EventAttendancePage() {
     }
 
     void loadData();
-  }, [eventId]);
+  }, [eventId, authLoading, canDecideApplications]);
 
-  const attendanceBlocked = useMemo(() => {
-    if (!eventData) {
-      return false;
-    }
-    return !hasEventEnded(eventData);
-  }, [eventData]);
+  const sortedApplications = useMemo(() => {
+    const copy = [...applications];
 
-  const handleChange = async (
+    copy.sort((a, b) => {
+      const first = new Date(a.applied_at).getTime();
+      const second = new Date(b.applied_at).getTime();
+
+      return sortDirection === "newest" ? second - first : first - second;
+    });
+
+    return copy;
+  }, [applications, sortDirection]);
+
+  const handleDecision = async (
     memberId: number,
-    attendance_status: AttendanceStatus,
-    attendance_mode: AttendanceMode | null,
+    decision_status: DecisionStatus,
   ) => {
     if (!eventId) {
       return;
@@ -133,24 +139,12 @@ export default function EventAttendancePage() {
       setBusyMemberId(memberId);
       setActionError(null);
 
-      const updated = await updateEventAttendance(eventId, memberId, {
-        attendance_status,
-        attendance_mode,
+      const updated = await decideEventApplication(eventId, memberId, {
+        decision_status,
       });
 
-      setRows((current) =>
-        current.map((row) =>
-          row.member_id === memberId
-            ? {
-                member_id: updated.member_id,
-                applied_at: updated.applied_at,
-                decision_status: updated.decision_status,
-                attendance_status: updated.attendance_status,
-                attendance_mode: updated.attendance_mode,
-                feedback_rating: updated.feedback_rating,
-              }
-            : row,
-        ),
+      setApplications((current) =>
+        current.map((item) => (item.member_id === memberId ? updated : item)),
       );
     } catch (err) {
       if (axios.isAxiosError(err)) {
@@ -158,16 +152,63 @@ export default function EventAttendancePage() {
         const message =
           typeof detail === "string"
             ? detail
-            : detail?.message ?? "Failed to update attendance.";
+            : detail?.message ?? "Failed to update application decision.";
 
         setActionError(message);
       } else {
-        setActionError("Failed to update attendance.");
+        setActionError("Failed to update application decision.");
       }
     } finally {
       setBusyMemberId(null);
     }
   };
+
+  const handleApproveMany = async (items: EventApplication[]) => {
+    if (!eventId || items.length === 0) {
+      return;
+    }
+
+    try {
+      setBulkBusy(true);
+      setActionError(null);
+
+      for (const item of items) {
+        const updated = await decideEventApplication(eventId, item.member_id, {
+          decision_status: "accepted",
+        });
+
+        setApplications((current) =>
+          current.map((row) =>
+            row.member_id === item.member_id ? updated : row,
+          ),
+        );
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const detail = err.response?.data?.detail;
+        const message =
+          typeof detail === "string"
+            ? detail
+            : detail?.message ?? "Bulk approve failed.";
+
+        setActionError(message);
+      } else {
+        setActionError("Bulk approve failed.");
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const pendingApplications = sortedApplications.filter(
+    (item) => item.decision_status === "pending",
+  );
+
+  const topNNumber = Number(topN);
+  const topNPending =
+    Number.isInteger(topNNumber) && topNNumber > 0
+      ? pendingApplications.slice(0, topNNumber)
+      : [];
 
   return (
     <Box sx={{ p: 3 }}>
@@ -180,10 +221,10 @@ export default function EventAttendancePage() {
         >
           <Box>
             <Typography variant="h4" gutterBottom>
-              Event attendance
+              Event applications
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {eventData?.title ?? "Manage attendance for this event"}
+              {eventData?.title ?? "Manage applications for this event"}
             </Typography>
           </Box>
 
@@ -204,90 +245,120 @@ export default function EventAttendancePage() {
         {!loading && error && <Alert severity="error">{error}</Alert>}
         {!loading && actionError && <Alert severity="error">{actionError}</Alert>}
 
-        {!loading && !error && attendanceBlocked && (
-          <Paper sx={{ p: 3 }}>
-            <Typography>
-              Attendance can be managed only after the event has ended.
-            </Typography>
-          </Paper>
-        )}
-
-        {!loading && !error && !attendanceBlocked && (
+        {!loading && !error && (
           <>
-            {rows.length === 0 ? (
+            <Paper sx={{ p: 3 }}>
+              <Stack
+                direction={{ xs: "column", lg: "row" }}
+                spacing={2}
+                alignItems={{ xs: "stretch", lg: "center" }}
+              >
+                <TextField
+                  select
+                  label="Order by application time"
+                  value={sortDirection}
+                  onChange={(event) =>
+                    setSortDirection(event.target.value as SortDirection)
+                  }
+                  sx={{ minWidth: 240 }}
+                >
+                  <MenuItem value="newest">Newest first</MenuItem>
+                  <MenuItem value="oldest">Oldest first</MenuItem>
+                </TextField>
+
+                <Button
+                  variant="outlined"
+                  onClick={() => handleApproveMany(pendingApplications)}
+                  disabled={bulkBusy || pendingApplications.length === 0}
+                >
+                  {bulkBusy ? "Approving..." : "Approve all pending"}
+                </Button>
+
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1}
+                  alignItems={{ xs: "stretch", sm: "center" }}
+                >
+                  <TextField
+                    label="Top N"
+                    type="number"
+                    value={topN}
+                    onChange={(event) => setTopN(event.target.value)}
+                    inputProps={{ min: 1 }}
+                    sx={{ width: 120 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={() => handleApproveMany(topNPending)}
+                    disabled={bulkBusy || topNPending.length === 0}
+                  >
+                    Approve top N pending
+                  </Button>
+                </Stack>
+              </Stack>
+            </Paper>
+
+            {sortedApplications.length === 0 ? (
               <Paper sx={{ p: 3 }}>
-                <Typography>No accepted applications found.</Typography>
+                <Typography>No applications found.</Typography>
               </Paper>
             ) : (
               <Stack spacing={2}>
-                {rows.map((row) => (
-                  <Paper key={row.member_id} sx={{ p: 3 }}>
-                    <Stack spacing={2}>
+                {sortedApplications.map((application) => (
+                  <Paper key={application.member_id} sx={{ p: 3 }}>
+                    <Stack spacing={1.5}>
                       <Typography variant="h6">
-                        Member #{row.member_id}
+                        Member #{application.member_id}
                       </Typography>
 
                       <Typography>
                         <strong>Applied at:</strong>{" "}
-                        {formatDateTime(row.applied_at)}
-                      </Typography>
-
-                      <Typography>
-                        <strong>Decision status:</strong> {row.decision_status}
-                      </Typography>
-
-                      <Typography>
-                        <strong>Feedback rating:</strong>{" "}
-                        {row.feedback_rating ?? "—"}
+                        {formatDateTime(application.applied_at)}
                       </Typography>
 
                       <Stack
-                        direction={{ xs: "column", md: "row" }}
-                        spacing={2}
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        sx={{ flexWrap: "wrap" }}
                       >
-                        <TextField
-                          select
-                          fullWidth
-                          label="Attendance status"
-                          value={row.attendance_status}
-                          onChange={(event) =>
-                            handleChange(
-                              row.member_id,
-                              event.target.value as AttendanceStatus,
-                              row.attendance_mode,
-                            )
-                          }
-                          disabled={busyMemberId === row.member_id}
-                        >
-                          {attendanceStatuses.map((status) => (
-                            <MenuItem key={status} value={status}>
-                              {status}
-                            </MenuItem>
-                          ))}
-                        </TextField>
-
-                        <TextField
-                          select
-                          fullWidth
-                          label="Attendance mode"
-                          value={row.attendance_mode ?? ""}
-                          onChange={(event) =>
-                            handleChange(
-                              row.member_id,
-                              row.attendance_status,
-                              (event.target.value || null) as AttendanceMode | null,
-                            )
-                          }
-                          disabled={busyMemberId === row.member_id}
-                        >
-                          <MenuItem value="">None</MenuItem>
-                          {attendanceModes.map((mode) => (
-                            <MenuItem key={mode} value={mode}>
-                              {mode}
-                            </MenuItem>
-                          ))}
-                        </TextField>
+                        <Typography>
+                          <strong>Decision:</strong>
+                        </Typography>
+                        <Chip label={application.decision_status} size="small" />
                       </Stack>
+
+                      <Typography>
+                        <strong>Attendance status:</strong>{" "}
+                        {application.attendance_status}
+                      </Typography>
+
+                      {application.feedback_submitted_at && (
+                        <Typography>
+                          <strong>Feedback submitted:</strong>{" "}
+                          {formatDateTime(application.feedback_submitted_at)}
+                        </Typography>
+                      )}
+
+                      <TextField
+                        select
+                        label="Update decision"
+                        value={application.decision_status}
+                        onChange={(event) =>
+                          void handleDecision(
+                            application.member_id,
+                            event.target.value as DecisionStatus,
+                          )
+                        }
+                        disabled={busyMemberId === application.member_id}
+                        sx={{ maxWidth: 260 }}
+                      >
+                        {decisionOptions.map((option) => (
+                          <MenuItem key={option} value={option}>
+                            {option}
+                          </MenuItem>
+                        ))}
+                      </TextField>
                     </Stack>
                   </Paper>
                 ))}

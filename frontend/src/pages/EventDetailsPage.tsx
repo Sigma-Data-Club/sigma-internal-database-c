@@ -21,7 +21,6 @@ import AssessmentIcon from "@mui/icons-material/Assessment";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import EventIcon from "@mui/icons-material/Event";
-import FactCheckIcon from "@mui/icons-material/FactCheck";
 import GroupIcon from "@mui/icons-material/Group";
 import HowToRegIcon from "@mui/icons-material/HowToReg";
 import SendIcon from "@mui/icons-material/Send";
@@ -35,6 +34,8 @@ import {
   getMyEventApplication,
   submitMyEventFeedback,
 } from "../api/events";
+import { useAuth } from "../context/AuthContext";
+import { hasAnyPermission, hasPermission } from "../auth/permissions";
 import type {
   AttendanceMode,
   Event,
@@ -96,11 +97,10 @@ function canSubmitFeedback(event: Event, application: EventApplication | null) {
 export default function EventDetailsPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [eventData, setEventData] = useState<Event | null>(null);
-  const [myApplication, setMyApplication] = useState<EventApplication | null>(
-    null,
-  );
+  const [myApplication, setMyApplication] = useState<EventApplication | null>(null);
   const [stats, setStats] = useState<EventStats | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -121,8 +121,26 @@ export default function EventDetailsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
+  const canReadEvents = hasPermission(user, "event.read");
+  const canApplyToEvent = hasPermission(user, "event.read");
+  const canUpdateEvent = hasPermission(user, "event.update");
+  const canDeleteEvent = hasPermission(user, "event.delete");
+  const canDecideApplications = hasPermission(user, "event.decide");
+  const canManageAttendance = hasAnyPermission(user, ["event.attendance", "event.decide"]);
+  const canReadEventStats = hasPermission(user, "event.stats.read");
+
   useEffect(() => {
     async function loadEventPage() {
+      if (authLoading) {
+        return;
+      }
+
+      if (!canReadEvents) {
+        setError("You do not have permission to view events.");
+        setLoading(false);
+        return;
+      }
+
       if (!eventId) {
         setError("Event ID is missing.");
         setLoading(false);
@@ -152,18 +170,22 @@ export default function EventDetailsPage() {
           setApplicationLoading(false);
         }
 
-        try {
-          setStatsLoading(true);
-          const statsResult = await getEventStats(eventId);
-          setStats(statsResult);
-        } catch (err) {
-          if (axios.isAxiosError(err) && err.response?.status === 403) {
-            setStats(null);
-          } else {
-            setStatsError("Failed to load event statistics.");
+        if (canReadEventStats) {
+          try {
+            setStatsLoading(true);
+            const statsResult = await getEventStats(eventId);
+            setStats(statsResult);
+          } catch (err) {
+            if (axios.isAxiosError(err) && err.response?.status === 403) {
+              setStats(null);
+            } else {
+              setStatsError("Failed to load event statistics.");
+            }
+          } finally {
+            setStatsLoading(false);
           }
-        } finally {
-          setStatsLoading(false);
+        } else {
+          setStats(null);
         }
       } catch {
         setError("Failed to load event details.");
@@ -173,7 +195,7 @@ export default function EventDetailsPage() {
     }
 
     void loadEventPage();
-  }, [eventId]);
+  }, [eventId, authLoading, canReadEvents, canReadEventStats]);
 
   const eventStatus = useMemo(() => {
     if (!eventData) {
@@ -320,289 +342,256 @@ export default function EventDetailsPage() {
         {!loading && error && <Alert severity="error">{error}</Alert>}
 
         {!loading && !error && eventData && (
-          <Stack spacing={3}>
+          <>
             <Paper sx={{ p: 3 }}>
-              <Stack spacing={1.5}>
+              <Stack spacing={2}>
                 <Stack
-                  direction="row"
+                  direction={{ xs: "column", sm: "row" }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "flex-start", sm: "center" }}
                   spacing={1}
-                  alignItems="center"
-                  sx={{ flexWrap: "wrap" }}
                 >
                   <Typography variant="h5">{eventData.title}</Typography>
-                  {eventStatus && <Chip label={eventStatus} color="primary" />}
+                  <Chip label={eventStatus ?? "—"} />
                 </Stack>
 
-                <Divider />
-
-                <Typography>
-                  <strong>ID:</strong> {eventData.event_id}
-                </Typography>
-                <Typography>
-                  <strong>Topic:</strong> {eventData.topic ?? "—"}
-                </Typography>
-                <Typography>
-                  <strong>Speaker:</strong> {eventData.speaker_name ?? "—"}
-                </Typography>
-                <Typography>
-                  <strong>Starts:</strong>{" "}
-                  {formatDateTime(eventData.start_datetime)}
-                </Typography>
-                <Typography>
-                  <strong>Ends:</strong>{" "}
-                  {formatDateTime(eventData.end_datetime)}
-                </Typography>
-                <Typography>
-                  <strong>Created by member ID:</strong>{" "}
-                  {eventData.created_by_member_id ?? "—"}
-                </Typography>
-                <Typography>
-                  <strong>Created at:</strong>{" "}
-                  {formatDateTime(eventData.created_at)}
+                <Typography color="text.secondary">
+                  {eventData.topic || "No topic"}
                 </Typography>
 
-                <Stack
-                  direction={{ xs: "column", md: "row" }}
-                  spacing={1.5}
-                  sx={{ pt: 1 }}
-                >
-                  <Button
-                    variant="outlined"
-                    startIcon={<EditIcon />}
-                    onClick={() => navigate(`/events/${eventData.event_id}/edit`)}
-                  >
-                    Edit event
-                  </Button>
-
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    onClick={() => setDeleteDialogOpen(true)}
-                  >
-                    Delete event
-                  </Button>
-                </Stack>
-              </Stack>
-            </Paper>
-
-            <Paper sx={{ p: 3 }}>
-              <Stack spacing={1.5}>
-                <Typography variant="h6">My application</Typography>
-
-                {applicationLoading ? (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <CircularProgress size={20} />
-                    <Typography>Loading your application...</Typography>
-                  </Box>
-                ) : myApplication ? (
-                  <>
-                    <Typography>
-                      <strong>Applied at:</strong>{" "}
-                      {formatDateTime(myApplication.applied_at)}
-                    </Typography>
-                    <Typography>
-                      <strong>Decision status:</strong>{" "}
-                      {myApplication.decision_status}
-                    </Typography>
-                    <Typography>
-                      <strong>Attendance status:</strong>{" "}
-                      {myApplication.attendance_status}
-                    </Typography>
-                    <Typography>
-                      <strong>Attendance mode:</strong>{" "}
-                      {myApplication.attendance_mode ?? "—"}
-                    </Typography>
-                    <Typography>
-                      <strong>Feedback rating:</strong>{" "}
-                      {myApplication.feedback_rating ?? "—"}
-                    </Typography>
-                    <Typography>
-                      <strong>Feedback comment:</strong>{" "}
-                      {myApplication.feedback_comment ?? "—"}
-                    </Typography>
-                    <Typography>
-                      <strong>Feedback submitted at:</strong>{" "}
-                      {formatDateTime(myApplication.feedback_submitted_at)}
-                    </Typography>
-                  </>
-                ) : (
-                  <Typography color="text.secondary">
-                    You have not applied to this event yet.
+                <Stack spacing={0.5}>
+                  <Typography>
+                    <strong>ID:</strong> {eventData.event_id}
                   </Typography>
-                )}
+                  <Typography>
+                    <strong>Start:</strong> {formatDateTime(eventData.start_datetime)}
+                  </Typography>
+                  <Typography>
+                    <strong>End:</strong> {formatDateTime(eventData.end_datetime)}
+                  </Typography>
+                  <Typography>
+                    <strong>Status:</strong> {eventStatus ?? "—"}
+                  </Typography>
+                </Stack>
 
-                {applicationError && (
-                  <Alert severity="error">{applicationError}</Alert>
+                {(canUpdateEvent || canDeleteEvent) && (
+                  <Stack
+                    direction={{ xs: "column", md: "row" }}
+                    spacing={1.5}
+                    sx={{ pt: 1 }}
+                  >
+                    {canUpdateEvent && (
+                      <Button
+                        variant="outlined"
+                        startIcon={<EditIcon />}
+                        onClick={() => navigate(`/events/${eventData.event_id}/edit`)}
+                      >
+                        Edit event
+                      </Button>
+                    )}
+
+                    {canDeleteEvent && (
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => setDeleteDialogOpen(true)}
+                      >
+                        Delete event
+                      </Button>
+                    )}
+                  </Stack>
                 )}
               </Stack>
             </Paper>
-
-            {!myApplication && (
-              <Paper sx={{ p: 3 }}>
-                <Stack spacing={2}>
-                  <Typography variant="h6">Apply to this event</Typography>
-
-                  <TextField
-                    select
-                    label="Attendance mode"
-                    value={applyMode}
-                    onChange={(event) =>
-                      setApplyMode(event.target.value as AttendanceMode)
-                    }
-                    SelectProps={{ native: true }}
-                  >
-                    <option value="in_person">In person</option>
-                    <option value="online">Online</option>
-                  </TextField>
-
-                  <Box>
-                    <Button
-                      variant="contained"
-                      startIcon={<SendIcon />}
-                      onClick={handleApply}
-                      disabled={applySubmitting}
-                    >
-                      {applySubmitting ? "Submitting..." : "Submit application"}
-                    </Button>
-                  </Box>
-                </Stack>
-              </Paper>
-            )}
-
-            {eventData && canSubmitFeedback(eventData, myApplication) && (
-              <Paper sx={{ p: 3 }}>
-                <Stack spacing={2}>
-                  <Typography variant="h6">Submit feedback</Typography>
-
-                  <TextField
-                    label="Rating"
-                    type="number"
-                    value={feedbackRating}
-                    onChange={(event) => setFeedbackRating(event.target.value)}
-                    inputProps={{ min: 1, max: 5, step: 1 }}
-                  />
-
-                  <TextField
-                    label="Comment"
-                    value={feedbackComment}
-                    onChange={(event) => setFeedbackComment(event.target.value)}
-                    multiline
-                    minRows={3}
-                    placeholder="Share your feedback about the event"
-                  />
-
-                  <Box>
-                    <Button
-                      variant="contained"
-                      startIcon={<FactCheckIcon />}
-                      onClick={handleSubmitFeedback}
-                      disabled={feedbackSubmitting}
-                    >
-                      {feedbackSubmitting ? "Submitting..." : "Submit feedback"}
-                    </Button>
-                  </Box>
-                </Stack>
-              </Paper>
-            )}
 
             <Paper sx={{ p: 3 }}>
               <Stack spacing={2}>
-                <Typography variant="h6">Management</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Use these tools for applications, attendance, and analytics.
-                </Typography>
+                <Typography variant="h6">My participation</Typography>
 
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={1.5}
-                  flexWrap="wrap"
-                >
-                  <Button
-                    variant="outlined"
-                    startIcon={<GroupIcon />}
-                    onClick={() =>
-                      navigate(`/events/${eventData.event_id}/applications`)
-                    }
-                  >
-                    Applications
-                  </Button>
-
-                  {showAttendanceLink ? (
-                    <Button
-                      variant="outlined"
-                      startIcon={<HowToRegIcon />}
-                      onClick={() =>
-                        navigate(`/events/${eventData.event_id}/attendance`)
-                      }
-                    >
-                      Attendance
-                    </Button>
-                  ) : (
-                    <Button variant="outlined" startIcon={<HowToRegIcon />} disabled>
-                      Attendance available after event end
-                    </Button>
-                  )}
-
-                  <Button
-                    variant="outlined"
-                    startIcon={<AssessmentIcon />}
-                    onClick={() =>
-                      navigate(`/events/${eventData.event_id}/stats`)
-                    }
-                  >
-                    Stats
-                  </Button>
-                </Stack>
-              </Stack>
-            </Paper>
-
-            <Paper sx={{ p: 3 }}>
-              <Stack spacing={1.5}>
-                <Typography variant="h6">
-                  Registration summary
-                </Typography>
-
-                {statsLoading ? (
+                {applicationLoading && (
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                     <CircularProgress size={20} />
-                    <Typography>Loading statistics...</Typography>
+                    <Typography>Loading application...</Typography>
                   </Box>
-                ) : stats ? (
-                  <>
+                )}
+
+                {!applicationLoading && applicationError && (
+                  <Alert severity="error">{applicationError}</Alert>
+                )}
+
+                {!applicationLoading && !myApplication && canApplyToEvent && (
+                  <Stack spacing={2}>
+                    <Typography color="text.secondary">
+                      You have not applied to this event yet.
+                    </Typography>
+
+                    <TextField
+                      select
+                      label="Attendance mode"
+                      value={applyMode}
+                      onChange={(event) =>
+                        setApplyMode(event.target.value as AttendanceMode)
+                      }
+                      sx={{ maxWidth: 280 }}
+                    >
+                      <option value="in_person">in_person</option>
+                      <option value="online">online</option>
+                    </TextField>
+
+                    <Box>
+                      <Button
+                        variant="contained"
+                        startIcon={<SendIcon />}
+                        onClick={() => void handleApply()}
+                        disabled={applySubmitting}
+                      >
+                        {applySubmitting ? "Submitting..." : "Apply"}
+                      </Button>
+                    </Box>
+                  </Stack>
+                )}
+
+                {!applicationLoading && myApplication && (
+                  <Stack spacing={1.5}>
                     <Typography>
-                      <strong>Total applications:</strong> {stats.total_applications}
+                      <strong>Decision:</strong> {myApplication.decision_status}
                     </Typography>
                     <Typography>
-                      <strong>Accepted:</strong> {stats.accepted}
+                      <strong>Attendance status:</strong> {myApplication.attendance_status}
                     </Typography>
                     <Typography>
-                      <strong>Pending:</strong> {stats.pending}
+                      <strong>Attendance mode:</strong> {myApplication.attendance_mode ?? "—"}
                     </Typography>
                     <Typography>
-                      <strong>Waitlisted:</strong> {stats.waitlisted}
+                      <strong>Applied at:</strong> {formatDateTime(myApplication.applied_at)}
                     </Typography>
-                    <Typography>
-                      <strong>Rejected:</strong> {stats.rejected}
-                    </Typography>
-                    <Typography>
-                      <strong>Cancelled:</strong> {stats.cancelled}
-                    </Typography>
-                  </>
-                ) : statsError ? (
-                  <Alert severity="warning">{statsError}</Alert>
-                ) : (
-                  <Typography color="text.secondary">
-                    Statistics are not available for your current permissions.
-                  </Typography>
+
+                    {myApplication.feedback_submitted_at && (
+                      <Typography>
+                        <strong>Feedback submitted:</strong>{" "}
+                        {formatDateTime(myApplication.feedback_submitted_at)}
+                      </Typography>
+                    )}
+
+                    {canSubmitFeedback(eventData, myApplication) && (
+                      <>
+                        <Divider />
+                        <Typography variant="subtitle1">Submit feedback</Typography>
+
+                        <TextField
+                          label="Rating (1-5)"
+                          type="number"
+                          value={feedbackRating}
+                          onChange={(event) => setFeedbackRating(event.target.value)}
+                          inputProps={{ min: 1, max: 5 }}
+                          sx={{ maxWidth: 200 }}
+                        />
+
+                        <TextField
+                          label="Comment"
+                          value={feedbackComment}
+                          onChange={(event) => setFeedbackComment(event.target.value)}
+                          multiline
+                          minRows={3}
+                          fullWidth
+                        />
+
+                        <Box>
+                          <Button
+                            variant="contained"
+                            startIcon={<SendIcon />}
+                            onClick={() => void handleSubmitFeedback()}
+                            disabled={feedbackSubmitting}
+                          >
+                            {feedbackSubmitting ? "Submitting..." : "Submit feedback"}
+                          </Button>
+                        </Box>
+                      </>
+                    )}
+                  </Stack>
                 )}
               </Stack>
             </Paper>
-          </Stack>
+
+            {(canDecideApplications || canManageAttendance || canReadEventStats) && (
+              <Paper sx={{ p: 3 }}>
+                <Stack spacing={2}>
+                  <Typography variant="h6">Management</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Use these tools for applications, attendance, and analytics.
+                  </Typography>
+
+                  {statsError && <Alert severity="error">{statsError}</Alert>}
+
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1.5}
+                    flexWrap="wrap"
+                  >
+                    {canDecideApplications && (
+                      <Button
+                        variant="outlined"
+                        startIcon={<GroupIcon />}
+                        onClick={() => navigate(`/events/${eventData.event_id}/applications`)}
+                      >
+                        Applications
+                      </Button>
+                    )}
+
+                    {canManageAttendance &&
+                      (showAttendanceLink ? (
+                        <Button
+                          variant="outlined"
+                          startIcon={<HowToRegIcon />}
+                          onClick={() => navigate(`/events/${eventData.event_id}/attendance`)}
+                        >
+                          Attendance
+                        </Button>
+                      ) : (
+                        <Button variant="outlined" startIcon={<HowToRegIcon />} disabled>
+                          Attendance available after event end
+                        </Button>
+                      ))}
+
+                    {canReadEventStats && (
+                      <Button
+                        variant="outlined"
+                        startIcon={<AssessmentIcon />}
+                        onClick={() => navigate(`/events/${eventData.event_id}/stats`)}
+                      >
+                        Stats
+                      </Button>
+                    )}
+                  </Stack>
+
+                  {canReadEventStats && statsLoading && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <CircularProgress size={20} />
+                      <Typography>Loading statistics...</Typography>
+                    </Box>
+                  )}
+
+                  {canReadEventStats && stats && (
+                    <Stack spacing={0.75}>
+                      <Typography variant="subtitle2">Quick stats</Typography>
+                      <Typography>Total applications: {stats.total_applications}</Typography>
+                      <Typography>Accepted: {stats.accepted}</Typography>
+                      <Typography>Pending: {stats.pending}</Typography>
+                      <Typography>Attended: {stats.attended}</Typography>
+                    </Stack>
+                  )}
+                </Stack>
+              </Paper>
+            )}
+          </>
         )}
       </Stack>
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
         <DialogTitle>Delete event</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -615,7 +604,7 @@ export default function EventDetailsPage() {
           </Button>
           <Button
             color="error"
-            onClick={handleDelete}
+            onClick={() => void handleDelete()}
             disabled={deleteSubmitting}
           >
             {deleteSubmitting ? "Deleting..." : "Delete"}

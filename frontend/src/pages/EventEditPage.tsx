@@ -6,19 +6,34 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import EventForm from "../components/events/EventForm";
 import { getEvent, updateEvent } from "../api/events";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { Event, EventUpdatePayload } from "../types/event";
 
 export default function EventEditPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [eventData, setEventData] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canUpdateEvent = hasPermission(user, "event.update");
+
   useEffect(() => {
     async function loadEvent() {
+      if (authLoading) {
+        return;
+      }
+
+      if (!canUpdateEvent) {
+        setError("You do not have permission to edit events.");
+        setLoading(false);
+        return;
+      }
+
       if (!eventId) {
         setError("Event ID is missing.");
         setLoading(false);
@@ -49,7 +64,7 @@ export default function EventEditPage() {
     }
 
     void loadEvent();
-  }, [eventId]);
+  }, [eventId, authLoading, canUpdateEvent]);
 
   const handleSubmit = async (payload: EventUpdatePayload) => {
     if (!eventId) {

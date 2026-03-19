@@ -20,6 +20,8 @@ import AddIcon from "@mui/icons-material/Add";
 import { useNavigate } from "react-router-dom";
 
 import { listEvents } from "../api/events";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { Event } from "../types/event";
 
 type EventFilter = "all" | "upcoming" | "ongoing" | "past";
@@ -75,6 +77,7 @@ function getStatusChipColor(
 
 export default function EventsPage() {
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +85,21 @@ export default function EventsPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<EventFilter>("all");
 
+  const canReadEvents = hasPermission(user, "event.read");
+  const canCreateEvent = hasPermission(user, "event.create");
+
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!canReadEvents) {
+      setEvents([]);
+      setError("You do not have permission to view events.");
+      setLoading(false);
+      return;
+    }
+
     const loadEvents = async () => {
       try {
         setLoading(true);
@@ -112,7 +129,7 @@ export default function EventsPage() {
     };
 
     void loadEvents();
-  }, []);
+  }, [authLoading, canReadEvents]);
 
   const filteredEvents = useMemo(() => {
     const normalized = search.trim().toLowerCase();
@@ -145,52 +162,50 @@ export default function EventsPage() {
     <Box sx={{ p: 3 }}>
       <Stack spacing={2}>
         <Stack
-          direction={{ xs: "column", sm: "row" }}
+          direction={{ xs: "column", md: "row" }}
           justifyContent="space-between"
-          alignItems={{ xs: "stretch", sm: "center" }}
-          spacing={1.5}
+          alignItems={{ xs: "stretch", md: "center" }}
+          spacing={2}
         >
           <Box>
             <Typography variant="h4" gutterBottom>
               Events
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Browse club events, filter them by time, and open detailed pages.
+              Browse events, applications, attendance, and statistics.
             </Typography>
           </Box>
 
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => navigate("/events/new")}
-          >
-            Create event
-          </Button>
+          {canCreateEvent && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => navigate("/events/new")}
+            >
+              Create event
+            </Button>
+          )}
         </Stack>
 
-        <Paper sx={{ p: 2 }}>
-          <Stack spacing={2}>
-            <Tabs
-              value={filter}
-              onChange={(_, value: EventFilter) => setFilter(value)}
-              variant="scrollable"
-              scrollButtons="auto"
-            >
-              <Tab label="All" value="all" />
-              <Tab label="Upcoming" value="upcoming" />
-              <Tab label="Ongoing" value="ongoing" />
-              <Tab label="Past" value="past" />
-            </Tabs>
+        <TextField
+          label="Search events"
+          placeholder="Search by title, topic, speaker or ID"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          fullWidth
+        />
 
-            <TextField
-              label="Search events"
-              placeholder="Search by title, topic, speaker or ID"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              fullWidth
-            />
-          </Stack>
-        </Paper>
+        <Tabs
+          value={filter}
+          onChange={(_, value: EventFilter) => setFilter(value)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+        >
+          <Tab value="all" label="All" />
+          <Tab value="upcoming" label="Upcoming" />
+          <Tab value="ongoing" label="Ongoing" />
+          <Tab value="past" label="Past" />
+        </Tabs>
 
         {loading && (
           <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
@@ -206,69 +221,58 @@ export default function EventsPage() {
             {filteredEvents.length === 0 ? (
               <Box sx={{ p: 2 }}>
                 <Typography>
-                  {search.trim()
-                    ? "No events match your search."
-                    : "No events found for this filter."}
+                  {search.trim() || filter !== "all"
+                    ? "No events match your filters."
+                    : "No events found."}
                 </Typography>
               </Box>
             ) : (
               <List disablePadding>
-                {filteredEvents.map((event) => {
+                {filteredEvents.map((event, index) => {
                   const status = getEventTimeStatus(event);
 
                   return (
-                    <ListItemButton
-                      key={event.event_id}
-                      divider
-                      onClick={() => navigate(`/events/${event.event_id}`)}
-                    >
-                      <ListItemText
-                        primary={event.title}
-                        secondary={
-                          <Stack spacing={1} sx={{ mt: 0.75 }}>
+                    <Box key={event.event_id}>
+                      <ListItemButton onClick={() => navigate(`/events/${event.event_id}`)}>
+                        <ListItemText
+                          primary={
                             <Stack
-                              direction="row"
+                              direction={{ xs: "column", sm: "row" }}
                               spacing={1}
-                              alignItems="center"
-                              sx={{ flexWrap: "wrap" }}
+                              alignItems={{ xs: "flex-start", sm: "center" }}
                             >
+                              <Typography variant="subtitle1">{event.title}</Typography>
                               <Chip
                                 label={status}
                                 size="small"
                                 color={getStatusChipColor(status)}
                               />
-
-                              {event.topic && (
-                                <Chip
-                                  label={event.topic}
-                                  size="small"
-                                  variant="outlined"
-                                />
-                              )}
                             </Stack>
+                          }
+                          secondary={
+                            <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                              <Typography variant="body2" color="text.secondary">
+                                Topic: {event.topic || "—"}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                Speaker: {event.speaker_name || "—"}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                ID: {event.event_id}
+                                {` • Start: ${formatDateTime(event.start_datetime)}`}
+                                {event.end_datetime
+                                  ? ` • End: ${formatDateTime(event.end_datetime)}`
+                                  : ""}
+                              </Typography>
+                            </Stack>
+                          }
+                        />
+                      </ListItemButton>
 
-                            <Typography variant="body2" color="text.secondary">
-                              <strong>Starts:</strong>{" "}
-                              {formatDateTime(event.start_datetime)}
-                            </Typography>
-
-                            <Typography variant="body2" color="text.secondary">
-                              <strong>Ends:</strong>{" "}
-                              {formatDateTime(event.end_datetime)}
-                            </Typography>
-
-                            <Typography variant="body2" color="text.secondary">
-                              <strong>Speaker:</strong>{" "}
-                              {event.speaker_name ?? "—"}
-                            </Typography>
-
-                            <Typography variant="body2" color="text.secondary">
-                              <strong>ID:</strong> {event.event_id}
-                            </Typography>
-                          </Stack>
-                        }
-                      />
-                    </ListItemButton>
+                      {index < filteredEvents.length - 1 && (
+                        <Box sx={{ borderTop: "1px solid", borderColor: "divider" }} />
+                      )}
+                    </Box>
                   );
                 })}
               </List>

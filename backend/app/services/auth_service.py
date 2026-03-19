@@ -5,13 +5,13 @@ import os
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select
-
+from app.models.member_role import MemberRole
 from app.models.member import Member
 from app.models.member_auth import MemberAuth
 from app.models.auth_session import AuthSession
-
+from app.core.permissions import get_member_permission_keys
 from app.core.errors import ErrorCode, error_payload
 from app.core.security import (
     verify_password,
@@ -192,3 +192,41 @@ class AuthService:
 
         db.commit()
         return len(sessions)
+    
+    @staticmethod
+    def get_my_access_profile(db: Session, *, member_id: int) -> dict:
+        member = db.scalar(
+            select(Member)
+            .options(
+                selectinload(Member.roles).selectinload(MemberRole.role)
+            )
+            .where(Member.member_id == member_id)
+        )
+
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error_payload(ErrorCode.AUTH_INVALID_TOKEN, "Member not found"),
+            )
+
+        permissions = sorted(get_member_permission_keys(db, member.member_id))
+
+        roles = []
+        for member_role in member.roles:
+            role = member_role.role
+            if role is None:
+                continue
+            roles.append({
+                "role_id": role.role_id,
+                "name": role.name,
+            })
+
+        roles.sort(key=lambda r: r["name"].lower())
+
+        return {
+            "member_id": member.member_id,
+            "email": member.email,
+            "is_active": bool(member.is_active),
+            "roles": roles,
+            "permissions": permissions,
+        }

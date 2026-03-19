@@ -22,7 +22,6 @@ import {
 import FolderIcon from "@mui/icons-material/Folder";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import HowToRegIcon from "@mui/icons-material/HowToReg";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -40,6 +39,7 @@ import {
   withdrawProjectApplication,
 } from "../api/projects";
 import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type {
   Project,
   ProjectApplication,
@@ -54,14 +54,6 @@ const PROJECT_STATUSES: ProjectStatus[] = [
   "finished",
   "archived",
 ];
-
-function hasPermission(user: unknown, permission: string): boolean {
-  const permissions = Array.isArray((user as { permissions?: unknown[] } | null)?.permissions)
-    ? ((user as { permissions?: string[] }).permissions ?? [])
-    : [];
-
-  return permissions.includes(permission) || permissions.includes("project.manage");
-}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) {
@@ -79,7 +71,7 @@ function formatDate(value: string | null | undefined): string {
 export default function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [project, setProject] = useState<Project | null>(null);
   const [stats, setStats] = useState<{
@@ -115,8 +107,9 @@ export default function ProjectDetailsPage() {
     application_text: "",
   });
 
-  const currentMemberId = (user as { member_id?: number } | null)?.member_id ?? null;
+  const currentMemberId = user?.member_id ?? null;
 
+  const canReadProject = hasPermission(user, "project.read");
   const canApply = hasPermission(user, "project.apply");
   const canUpdate = hasPermission(user, "project.update");
   const canDelete = hasPermission(user, "project.delete");
@@ -145,6 +138,16 @@ export default function ProjectDetailsPage() {
   }, [applications, currentMemberId]);
 
   async function loadAll() {
+    if (authLoading) {
+      return;
+    }
+
+    if (!canReadProject) {
+      setError("You do not have permission to view project details.");
+      setLoading(false);
+      return;
+    }
+
     if (!projectId) {
       setError("Project ID is missing.");
       setLoading(false);
@@ -197,9 +200,13 @@ export default function ProjectDetailsPage() {
   }
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, authLoading, canReadProject, canManage, currentMemberId]);
 
   async function handleUpdateProject() {
     if (!projectId || !project) {
@@ -704,11 +711,12 @@ export default function ProjectDetailsPage() {
                             </Typography>
 
                             <Typography variant="body2">
-                              <strong>Application text:</strong> {application.application_text}
+                              <strong>Application text:</strong>{" "}
+                              {application.application_text || "—"}
                             </Typography>
 
                             <Typography variant="body2" color="text.secondary">
-                              Created: {formatDate(application.created_at)}
+                              Applied: {formatDate(application.created_at)}
                             </Typography>
 
                             {application.manager_note && (
@@ -717,45 +725,29 @@ export default function ProjectDetailsPage() {
                               </Typography>
                             )}
 
-                            {canManage && application.status === "pending" && (
-                              <Stack direction="row" spacing={1}>
-                                <Button
-                                  variant="contained"
-                                  color="success"
-                                  size="small"
-                                  startIcon={<PersonAddIcon />}
-                                  onClick={() =>
-                                    void handleDecision(application.application_id, "accepted")
-                                  }
-                                >
-                                  Accept
-                                </Button>
-
-                                <Button
-                                  variant="contained"
-                                  color="error"
-                                  size="small"
-                                  onClick={() =>
-                                    void handleDecision(application.application_id, "rejected")
-                                  }
-                                >
-                                  Reject
-                                </Button>
-                              </Stack>
-                            )}
-
-                            {!canManage &&
-                              currentMemberId === application.member_id &&
+                            {canManage &&
                               application.status === "pending" && (
-                                <Button
-                                  variant="outlined"
-                                  size="small"
-                                  onClick={() =>
-                                    void handleWithdraw(application.application_id)
-                                  }
-                                >
-                                  Withdraw
-                                </Button>
+                                <Stack direction="row" spacing={1}>
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    onClick={() =>
+                                      void handleDecision(application.application_id, "accepted")
+                                    }
+                                  >
+                                    Accept
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    onClick={() =>
+                                      void handleDecision(application.application_id, "rejected")
+                                    }
+                                  >
+                                    Reject
+                                  </Button>
+                                </Stack>
                               )}
                           </Stack>
                         </Paper>
@@ -769,14 +761,8 @@ export default function ProjectDetailsPage() {
         )}
       </Stack>
 
-      <Dialog
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        fullWidth
-        maxWidth="sm"
-      >
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Edit project</DialogTitle>
-
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
@@ -792,10 +778,7 @@ export default function ProjectDetailsPage() {
               label="Description"
               value={editForm.description}
               onChange={(event) =>
-                setEditForm((prev) => ({
-                  ...prev,
-                  description: event.target.value,
-                }))
+                setEditForm((prev) => ({ ...prev, description: event.target.value }))
               }
               multiline
               minRows={4}
@@ -822,35 +805,28 @@ export default function ProjectDetailsPage() {
             </TextField>
 
             <TextField
-              label="Start date"
-              type="date"
+              label="Started at"
+              type="datetime-local"
               value={editForm.started_at}
               onChange={(event) =>
-                setEditForm((prev) => ({
-                  ...prev,
-                  started_at: event.target.value,
-                }))
+                setEditForm((prev) => ({ ...prev, started_at: event.target.value }))
               }
               InputLabelProps={{ shrink: true }}
               fullWidth
             />
 
             <TextField
-              label="Finish date"
-              type="date"
+              label="Finished at"
+              type="datetime-local"
               value={editForm.finished_at}
               onChange={(event) =>
-                setEditForm((prev) => ({
-                  ...prev,
-                  finished_at: event.target.value,
-                }))
+                setEditForm((prev) => ({ ...prev, finished_at: event.target.value }))
               }
               InputLabelProps={{ shrink: true }}
               fullWidth
             />
           </Stack>
         </DialogContent>
-
         <DialogActions>
           <Button onClick={() => setEditOpen(false)}>Cancel</Button>
           <Button
@@ -863,56 +839,38 @@ export default function ProjectDetailsPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={applyOpen}
-        onClose={() => setApplyOpen(false)}
-        fullWidth
-        maxWidth="sm"
-      >
+      <Dialog open={applyOpen} onClose={() => setApplyOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Apply to project</DialogTitle>
-
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField
               label="Desired role"
               value={applyForm.desired_role}
               onChange={(event) =>
-                setApplyForm((prev) => ({
-                  ...prev,
-                  desired_role: event.target.value,
-                }))
+                setApplyForm((prev) => ({ ...prev, desired_role: event.target.value }))
               }
               fullWidth
             />
-
             <TextField
-              label="What can you do?"
+              label="Application text"
               value={applyForm.application_text}
               onChange={(event) =>
-                setApplyForm((prev) => ({
-                  ...prev,
-                  application_text: event.target.value,
-                }))
+                setApplyForm((prev) => ({ ...prev, application_text: event.target.value }))
               }
               multiline
-              minRows={5}
+              minRows={4}
               fullWidth
             />
           </Stack>
         </DialogContent>
-
         <DialogActions>
           <Button onClick={() => setApplyOpen(false)}>Cancel</Button>
           <Button
             variant="contained"
             onClick={() => void handleApply()}
-            disabled={
-              busy ||
-              !applyForm.desired_role.trim() ||
-              !applyForm.application_text.trim()
-            }
+            disabled={busy || !applyForm.desired_role.trim()}
           >
-            Submit application
+            Submit
           </Button>
         </DialogActions>
       </Dialog>

@@ -19,6 +19,8 @@ import {
   getEvent,
   listEventApplications,
 } from "../api/events";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { DecisionStatus, Event, EventApplication } from "../types/event";
 
 const decisionOptions: DecisionStatus[] = [
@@ -48,6 +50,7 @@ function formatDateTime(value: string | null): string {
 export default function EventApplicationsPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [eventData, setEventData] = useState<Event | null>(null);
   const [applications, setApplications] = useState<EventApplication[]>([]);
@@ -59,8 +62,20 @@ export default function EventApplicationsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("newest");
   const [topN, setTopN] = useState("5");
 
+  const canDecideApplications = hasPermission(user, "event.decide");
+
   useEffect(() => {
     async function loadData() {
+      if (authLoading) {
+        return;
+      }
+
+      if (!canDecideApplications) {
+        setError("You do not have permission to manage event applications.");
+        setLoading(false);
+        return;
+      }
+
       if (!eventId) {
         setError("Event ID is missing.");
         setLoading(false);
@@ -97,7 +112,7 @@ export default function EventApplicationsPage() {
     }
 
     void loadData();
-  }, [eventId]);
+  }, [eventId, authLoading, canDecideApplications]);
 
   const sortedApplications = useMemo(() => {
     const copy = [...applications];
@@ -318,45 +333,32 @@ export default function EventApplicationsPage() {
                         {application.attendance_status}
                       </Typography>
 
-                      <Typography>
-                        <strong>Attendance mode:</strong>{" "}
-                        {application.attendance_mode ?? "—"}
-                      </Typography>
+                      {application.feedback_submitted_at && (
+                        <Typography>
+                          <strong>Feedback submitted:</strong>{" "}
+                          {formatDateTime(application.feedback_submitted_at)}
+                        </Typography>
+                      )}
 
-                      <Typography>
-                        <strong>Feedback rating:</strong>{" "}
-                        {application.feedback_rating ?? "—"}
-                      </Typography>
-
-                      <Typography>
-                        <strong>Feedback submitted at:</strong>{" "}
-                        {formatDateTime(application.feedback_submitted_at)}
-                      </Typography>
-
-                      <Stack
-                        direction={{ xs: "column", md: "row" }}
-                        spacing={1}
-                        flexWrap="wrap"
+                      <TextField
+                        select
+                        label="Update decision"
+                        value={application.decision_status}
+                        onChange={(event) =>
+                          void handleDecision(
+                            application.member_id,
+                            event.target.value as DecisionStatus,
+                          )
+                        }
+                        disabled={busyMemberId === application.member_id}
+                        sx={{ maxWidth: 260 }}
                       >
-                        {decisionOptions.map((decision) => (
-                          <Button
-                            key={decision}
-                            variant={
-                              application.decision_status === decision
-                                ? "contained"
-                                : "outlined"
-                            }
-                            onClick={() =>
-                              handleDecision(application.member_id, decision)
-                            }
-                            disabled={
-                              busyMemberId === application.member_id || bulkBusy
-                            }
-                          >
-                            {decision}
-                          </Button>
+                        {decisionOptions.map((option) => (
+                          <MenuItem key={option} value={option}>
+                            {option}
+                          </MenuItem>
                         ))}
-                      </Stack>
+                      </TextField>
                     </Stack>
                   </Paper>
                 ))}

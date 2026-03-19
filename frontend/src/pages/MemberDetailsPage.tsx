@@ -3,29 +3,42 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
-  Divider,
   Paper,
   Stack,
   Typography,
 } from "@mui/material";
-import PeopleIcon from "@mui/icons-material/People";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { getMember } from "../api/member";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { Member } from "../types/member";
 
 export default function MemberDetailsPage() {
   const { memberId } = useParams();
   const navigate = useNavigate();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [member, setMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const canReadMemberDetails = hasPermission(user, "member.read");
+
   useEffect(() => {
     async function loadMember() {
+      if (authLoading) {
+        return;
+      }
+
+      if (!canReadMemberDetails) {
+        setError("You do not have permission to view member details.");
+        setLoading(false);
+        return;
+      }
+
       if (!memberId) {
         setError("Member ID is missing.");
         setLoading(false);
@@ -46,33 +59,29 @@ export default function MemberDetailsPage() {
     }
 
     void loadMember();
-  }, [memberId]);
-
-  const fullName = member
-    ? `${member.first_name} ${member.last_name}`
-    : "Member details";
+  }, [memberId, authLoading, canReadMemberDetails]);
 
   return (
     <Box sx={{ p: 3 }}>
       <Stack spacing={3}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
-          spacing={1.5}
           justifyContent="space-between"
           alignItems={{ xs: "stretch", sm: "center" }}
+          spacing={1.5}
         >
           <Box>
             <Typography variant="h4" gutterBottom>
-              {fullName}
+              Member details
             </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Detailed member profile
+            <Typography variant="body2" color="text.secondary">
+              Detailed member profile.
             </Typography>
           </Box>
 
           <Button
-            variant="contained"
-            startIcon={<PeopleIcon />}
+            variant="outlined"
+            startIcon={<ArrowBackIcon />}
             onClick={() => navigate("/members")}
           >
             Back to members
@@ -85,56 +94,32 @@ export default function MemberDetailsPage() {
           </Box>
         )}
 
-        {!loading && error && (
-          <Alert severity="error">
-            {error}
-          </Alert>
-        )}
+        {!loading && error && <Alert severity="error">{error}</Alert>}
 
         {!loading && !error && member && (
           <Paper sx={{ p: 3 }}>
-            <Stack spacing={2.5}>
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                spacing={2}
-                justifyContent="space-between"
-                alignItems={{ xs: "flex-start", sm: "center" }}
-              >
-                <Box>
-                  <Typography variant="h5">
-                    {member.first_name} {member.last_name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Member ID: {member.member_id}
-                  </Typography>
-                </Box>
-
-                <Chip
-                  label={member.is_active ? "Active" : "Inactive"}
-                  color={member.is_active ? "success" : "default"}
-                />
-              </Stack>
-
-              <Divider />
-
-              <Stack spacing={1.5}>
-                <Typography>
-                  <strong>Email:</strong> {member.email}
-                </Typography>
-
-                <Typography>
-                  <strong>Phone:</strong> {member.phone ?? "—"}
-                </Typography>
-
-                <Typography>
-                  <strong>Academic program ID:</strong>{" "}
-                  {member.academic_program_id ?? "—"}
-                </Typography>
-
-                <Typography>
-                  <strong>Study year:</strong> {member.study_year ?? "—"}
-                </Typography>
-              </Stack>
+            <Stack spacing={1.5}>
+              <Typography variant="h5">
+                {member.first_name} {member.last_name}
+              </Typography>
+              <Typography>
+                <strong>ID:</strong> {member.member_id}
+              </Typography>
+              <Typography>
+                <strong>Email:</strong> {member.email}
+              </Typography>
+              <Typography>
+                <strong>Phone:</strong> {member.phone || "—"}
+              </Typography>
+              <Typography>
+                <strong>Academic program ID:</strong> {member.academic_program_id ?? "—"}
+              </Typography>
+              <Typography>
+                <strong>Study year:</strong> {member.study_year ?? "—"}
+              </Typography>
+              <Typography>
+                <strong>Active:</strong> {member.is_active ? "Yes" : "No"}
+              </Typography>
             </Stack>
           </Paper>
         )}

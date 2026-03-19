@@ -1,42 +1,46 @@
-import { useState } from "react";
-import axios from "axios";
 import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate } from "react-router-dom";
 
 import EventForm from "../components/events/EventForm";
 import { createEvent } from "../api/events";
+import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { EventCreatePayload } from "../types/event";
 
 export default function EventCreatePage() {
   const navigate = useNavigate();
+  const { user, isLoading } = useAuth();
 
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const canCreateEvent = hasPermission(user, "event.create");
 
   const handleSubmit = async (payload: EventCreatePayload) => {
-    try {
-      setSubmitting(true);
-      setError(null);
-
-      const created = await createEvent(payload);
-      navigate(`/events/${created.event_id}`);
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        const detail = err.response?.data?.detail;
-        const message =
-          typeof detail === "string"
-            ? detail
-            : detail?.message ?? "Failed to create event.";
-
-        setError(message);
-      } else {
-        setError("Failed to create event.");
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    const created = await createEvent(payload);
+    navigate(`/events/${created.event_id}`);
   };
+
+  if (isLoading) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography>Loading permissions...</Typography>
+      </Box>
+    );
+  }
+
+  if (!canCreateEvent) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Stack spacing={3}>
+          <Alert severity="error">
+            You do not have permission to create events.
+          </Alert>
+          <Button variant="outlined" onClick={() => navigate("/events")}>
+            Back to events
+          </Button>
+        </Stack>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -52,7 +56,7 @@ export default function EventCreatePage() {
               Create event
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Fill in the event fields and save a new event.
+              Create a new event.
             </Typography>
           </Box>
 
@@ -65,9 +69,7 @@ export default function EventCreatePage() {
           </Button>
         </Stack>
 
-        {error && <Alert severity="error">{error}</Alert>}
-
-        <EventForm mode="create" submitting={submitting} onSubmit={handleSubmit} />
+        <EventForm mode="create" submitting={false} onSubmit={handleSubmit} />
       </Stack>
     </Box>
   );

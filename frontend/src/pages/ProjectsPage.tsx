@@ -4,12 +4,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   MenuItem,
   Paper,
   Stack,
@@ -21,6 +23,7 @@ import { useNavigate } from "react-router-dom";
 
 import { createProject, listProjects } from "../api/projects";
 import { useAuth } from "../context/AuthContext";
+import { hasPermission } from "../auth/permissions";
 import type { CreateProjectPayload, Project, ProjectStatus } from "../types/project";
 
 const PROJECT_STATUSES: ProjectStatus[] = [
@@ -30,17 +33,106 @@ const PROJECT_STATUSES: ProjectStatus[] = [
   "archived",
 ];
 
-function hasPermission(user: unknown, permission: string): boolean {
-  const permissions = Array.isArray((user as { permissions?: unknown[] } | null)?.permissions)
-    ? ((user as { permissions?: string[] }).permissions ?? [])
-    : [];
+type CreateProjectFormState = {
+  name: string;
+  description: string;
+  status: ProjectStatus;
+  started_at: string;
+  finished_at: string;
+  has_finish_date: boolean;
+};
 
-  return permissions.includes(permission) || permissions.includes("project.manage");
+function createInitialFormState(): CreateProjectFormState {
+  return {
+    name: "",
+    description: "",
+    status: "planned",
+    started_at: "",
+    finished_at: "",
+    has_finish_date: false,
+  };
+}
+
+function normalizeDateTimeLocal(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function extractApiErrorMessage(err: unknown, fallback: string): string {
+  if (!axios.isAxiosError(err)) {
+    return fallback;
+  }
+
+  const detail = err.response?.data?.detail;
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((item) => {
+        const path = Array.isArray(item?.loc) ? item.loc.join(".") : "field";
+        const message =
+          typeof item?.msg === "string" && item.msg.trim()
+            ? item.msg
+            : "Invalid value";
+        return `${path}: ${message}`;
+      })
+      .join(" | ");
+  }
+
+  const message = err.response?.data?.message;
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  return fallback;
+}
+
+function isFinishBeforeStart(
+  startedAt: string,
+  finishedAt: string,
+  hasFinishDate: boolean,
+): boolean {
+  if (!hasFinishDate) {
+    return false;
+  }
+
+  if (!startedAt.trim() || !finishedAt.trim()) {
+    return false;
+  }
+
+  const start = new Date(startedAt);
+  const finish = new Date(finishedAt);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(finish.getTime())) {
+    return false;
+  }
+
+  return finish < start;
 }
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,15 +143,23 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateProjectPayload>({
-    name: "",
-    description: "",
-    status: "planned",
-    started_at: null,
-    finished_at: null,
-  });
+  const [createForm, setCreateForm] = useState<CreateProjectFormState>(
+    createInitialFormState(),
+  );
 
-  const canCreate = hasPermission(user, "project.create");
+  const canReadProjects = hasPermission(user, "project.read");
+  const canCreateProject = hasPermission(user, "project.create");
+
+  const finishBeforeStart = isFinishBeforeStart(
+    createForm.started_at,
+    createForm.finished_at,
+    createForm.has_finish_date,
+  );
+
+  const createDisabled =
+    submitting ||
+    !createForm.name.trim() ||
+    finishBeforeStart;
 
   async function loadProjects() {
     try {
@@ -85,7 +185,7 @@ export default function ProjectsPage() {
         } else if (status === 404) {
           setError("Projects endpoint was not found.");
         } else {
-          setError("Failed to load projects.");
+          setError(extractApiErrorMessage(err, "Failed to load projects."));
         }
       } else {
         setError("Unexpected error.");
@@ -96,14 +196,29 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!canReadProjects) {
+      setProjects([]);
+      setError("You do not have permission to view projects.");
+      setLoading(false);
+      return;
+    }
+
     void loadProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authLoading, canReadProjects]);
 
   const filteredProjects = useMemo(() => {
     const normalized = search.trim().toLowerCase();
 
     return projects.filter((project) => {
+      if (statusFilter && project.status !== statusFilter) {
+        return false;
+      }
+
       if (!normalized) {
         return true;
       }
@@ -115,41 +230,54 @@ export default function ProjectsPage() {
         String(project.project_id).includes(normalized)
       );
     });
-  }, [projects, search]);
+  }, [projects, search, statusFilter]);
 
   async function handleCreateProject() {
+    if (!createForm.name.trim()) {
+      setError("Project name is required.");
+      return;
+    }
+
+    if (finishBeforeStart) {
+      setError("Finish date cannot be earlier than start date.");
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError(null);
 
-      await createProject({
-        ...createForm,
-        description: createForm.description?.trim() || null,
-        started_at: createForm.started_at || null,
-        finished_at: createForm.finished_at || null,
-      });
+      const payload: CreateProjectPayload = {
+        name: createForm.name.trim(),
+        description: createForm.description.trim() || null,
+        status: createForm.status,
+        started_at: normalizeDateTimeLocal(createForm.started_at),
+        finished_at: createForm.has_finish_date
+          ? normalizeDateTimeLocal(createForm.finished_at)
+          : null,
+      };
+
+      const created = await createProject(payload);
 
       setCreateOpen(false);
-      setCreateForm({
-        name: "",
-        description: "",
-        status: "planned",
-        started_at: null,
-        finished_at: null,
-      });
-
+      setCreateForm(createInitialFormState());
       await loadProjects();
+
+      navigate(`/projects/${created.project_id}`);
     } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setError(
-          String(err.response?.data?.detail?.message ?? "Failed to create project."),
-        );
-      } else {
-        setError("Failed to create project.");
-      }
+      setError(extractApiErrorMessage(err, "Failed to create project."));
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleCloseCreateDialog() {
+    if (submitting) {
+      return;
+    }
+
+    setCreateOpen(false);
+    setCreateForm(createInitialFormState());
   }
 
   return (
@@ -170,7 +298,7 @@ export default function ProjectsPage() {
             </Typography>
           </Box>
 
-          {canCreate && (
+          {canCreateProject && (
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -204,7 +332,6 @@ export default function ProjectsPage() {
               </MenuItem>
             ))}
           </TextField>
-
         </Stack>
 
         {loading && (
@@ -245,9 +372,7 @@ export default function ProjectsPage() {
                         alignItems={{ xs: "flex-start", sm: "center" }}
                         spacing={1}
                       >
-                        <Typography variant="h6">
-                          {project.name}
-                        </Typography>
+                        <Typography variant="h6">{project.name}</Typography>
 
                         <Chip
                           label={project.status}
@@ -270,8 +395,12 @@ export default function ProjectsPage() {
 
                       <Typography variant="caption" color="text.secondary">
                         ID: {project.project_id}
-                        {project.started_at ? ` • Start: ${project.started_at}` : ""}
-                        {project.finished_at ? ` • Finish: ${project.finished_at}` : ""}
+                        {project.started_at
+                          ? ` • Start: ${formatDateTime(project.started_at)}`
+                          : ""}
+                        {project.finished_at
+                          ? ` • Finish: ${formatDateTime(project.finished_at)}`
+                          : ""}
                       </Typography>
                     </Stack>
                   </Box>
@@ -284,7 +413,7 @@ export default function ProjectsPage() {
 
       <Dialog
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={handleCloseCreateDialog}
         fullWidth
         maxWidth="sm"
       >
@@ -299,11 +428,12 @@ export default function ProjectsPage() {
                 setCreateForm((prev) => ({ ...prev, name: event.target.value }))
               }
               fullWidth
+              required
             />
 
             <TextField
               label="Description"
-              value={createForm.description ?? ""}
+              value={createForm.description}
               onChange={(event) =>
                 setCreateForm((prev) => ({
                   ...prev,
@@ -335,43 +465,76 @@ export default function ProjectsPage() {
             </TextField>
 
             <TextField
-              label="Start date"
-              type="date"
-              value={createForm.started_at ?? ""}
+              label="Started at"
+              type="datetime-local"
+              value={createForm.started_at}
               onChange={(event) =>
                 setCreateForm((prev) => ({
                   ...prev,
-                  started_at: event.target.value || null,
+                  started_at: event.target.value,
                 }))
               }
               InputLabelProps={{ shrink: true }}
               fullWidth
+              helperText="Optional"
             />
 
-            <TextField
-              label="Finish date"
-              type="date"
-              value={createForm.finished_at ?? ""}
-              onChange={(event) =>
-                setCreateForm((prev) => ({
-                  ...prev,
-                  finished_at: event.target.value || null,
-                }))
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={createForm.has_finish_date}
+                  onChange={(event) =>
+                    setCreateForm((prev) => ({
+                      ...prev,
+                      has_finish_date: event.target.checked,
+                      finished_at: event.target.checked ? prev.finished_at : "",
+                    }))
+                  }
+                />
               }
-              InputLabelProps={{ shrink: true }}
-              fullWidth
+              label="Set finish date"
             />
+
+            {createForm.has_finish_date && (
+              <TextField
+                label="Finished at"
+                type="datetime-local"
+                value={createForm.finished_at}
+                onChange={(event) =>
+                  setCreateForm((prev) => ({
+                    ...prev,
+                    finished_at: event.target.value,
+                  }))
+                }
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+            )}
+
+            {finishBeforeStart && (
+              <Alert severity="warning">
+                Finish date cannot be earlier than start date.
+              </Alert>
+            )}
+
+            {!createForm.has_finish_date && (
+              <Typography variant="body2" color="text.secondary">
+                This project will be created without an end date.
+              </Typography>
+            )}
           </Stack>
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button onClick={handleCloseCreateDialog} disabled={submitting}>
+            Cancel
+          </Button>
           <Button
             variant="contained"
             onClick={() => void handleCreateProject()}
-            disabled={submitting || !createForm.name.trim()}
+            disabled={createDisabled}
           >
-            Create
+            {submitting ? "Creating..." : "Create"}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -21,3 +21,16 @@ class StatusResponse(BaseModel):
 class LogoutAllResponse(BaseModel):
     status: str = "ok"
     revoked_sessions: int
+
+
+class AuthAccessRoleOut(BaseModel):
+    role_id: int
+    name: str
+
+
+class AuthAccessProfileResponse(BaseModel):
+    member_id: int
+    email: EmailStr
+    is_active: bool
+    roles: List[AuthAccessRoleOut]
+    permissions: List[str]
