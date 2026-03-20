@@ -11,7 +11,8 @@ import MembersPage from "../features/members/pages/MembersPage";
 import MemberDetailsPage from "../features/members/pages/MemberDetailsPage";
 
 import ProjectsPage from "../features/projects/pages/ProjectsPage";
-import ProjectDetailsPage from "../features/projects/pages/ProjectDetailsPage";
+import ProjectManagementPage from "../features/projects/pages/ProjectManagementPage";
+import ProjectAnalyticsPage from "../features/projects/pages/ProjectAnalyticsPage";
 
 import EventsPage from "../features/events/pages/EventsPage";
 import EventCreatePage from "../features/events/pages/EventCreatePage";
@@ -29,6 +30,16 @@ function EventOverviewRedirect() {
   }
 
   return <Navigate to={`/events/${eventId}/manage?tab=overview`} replace />;
+}
+
+function ProjectOverviewRedirect() {
+  const { projectId } = useParams();
+
+  if (!projectId) {
+    return <Navigate to="/projects" replace />;
+  }
+
+  return <Navigate to={`/projects/${projectId}/manage?tab=overview`} replace />;
 }
 
 export const router = createBrowserRouter([
@@ -82,10 +93,26 @@ export const router = createBrowserRouter([
         path: "projects/:projectId",
         element: (
           <RequirePermissionRoute permissions={["project.read"]}>
-            <ProjectDetailsPage />
+            <ProjectOverviewRedirect />
           </RequirePermissionRoute>
         ),
       },
+      {
+        path: "projects/:projectId/manage",
+        element: (
+          <RequirePermissionRoute permissions={["project.read"]}>
+            <ProjectManagementPage />
+          </RequirePermissionRoute>
+        ),
+      },
+      {
+  path: "projects/analytics",
+  element: (
+    <RequirePermissionRoute permissions={["project.stats.read"]}>
+      <ProjectAnalyticsPage />
+    </RequirePermissionRoute>
+  ),
+},
 
       {
         path: "events",

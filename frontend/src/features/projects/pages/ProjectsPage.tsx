@@ -112,6 +112,7 @@ export default function ProjectsPage() {
 
   const canReadProjects = hasPermission(user, "project.read");
   const canCreateProject = hasPermission(user, "project.create");
+  const canReadStats = hasPermission(user, "project.stats.read");
 
   const finishBeforeStart = isFinishBeforeStart(
     createForm.started_at,
@@ -229,7 +230,7 @@ export default function ProjectsPage() {
       setCreateForm(createInitialFormState());
       await loadProjects();
 
-      navigate(`/projects/${created.project_id}`);
+      navigate(`/projects/${created.project_id}/manage?tab=overview`);
     } catch (err) {
       setError(
         extractProjectApiErrorMessage(
@@ -258,15 +259,26 @@ export default function ProjectsPage() {
           title={projectStrings.page.listTitle}
           subtitle={projectStrings.page.listSubtitle}
           actions={
-            canCreateProject ? (
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => setCreateOpen(true)}
-              >
-                {projectStrings.actions.createProject}
-              </Button>
-            ) : undefined
+            <Stack direction="row" spacing={1}>
+              {canReadStats && (
+                <Button
+                  variant="outlined"
+                  onClick={() => navigate("/projects/analytics")}
+                >
+                  Analítica de proyectos
+                </Button>
+              )}
+
+              {canCreateProject && (
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setCreateOpen(true)}
+                >
+                  {projectStrings.actions.createProject}
+                </Button>
+              )}
+            </Stack>
           }
         />
 
@@ -328,7 +340,9 @@ export default function ProjectsPage() {
                       cursor: "pointer",
                       "&:hover": { bgcolor: "action.hover" },
                     }}
-                    onClick={() => navigate(`/projects/${project.project_id}`)}
+                    onClick={() =>
+                      navigate(`/projects/${project.project_id}/manage?tab=overview`)
+                    }
                   >
                     <Stack spacing={1}>
                       <Stack

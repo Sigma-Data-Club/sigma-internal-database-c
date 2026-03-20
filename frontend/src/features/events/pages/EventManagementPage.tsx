@@ -51,7 +51,6 @@ import { eventStrings } from "../utils/eventStrings";
 import { extractEventApiErrorMessage } from "../utils/eventErrors";
 import {
   canManageAttendance,
-  canManageAttendanceForApplication,
   canSubmitFeedback,
   filterApplicationsBySearch,
   formatEventDateTime,
@@ -902,130 +901,82 @@ export default function EventManagementPage() {
                         {eventStrings.empty.noApplications}
                       </Typography>
                     ) : (
-                      filteredApplications.map((application) => {
-                        const attendanceAllowed =
-                          eventData &&
-                          canManageAttendanceForApplication(eventData, application);
+                      filteredApplications.map((application) => (
+                        <Paper
+                          key={application.member_id}
+                          variant="outlined"
+                          sx={{ p: 2 }}
+                        >
+                          <Stack spacing={1.5}>
+                            <Stack
+                              direction={{ xs: "column", md: "row" }}
+                              justifyContent="space-between"
+                              spacing={1}
+                            >
+                              <Box>
+                                <Typography fontWeight={600}>
+                                  {eventStrings.labels.memberId}: {application.member_id}
+                                </Typography>
+                              </Box>
 
-                        return (
-                          <Paper
-                            key={application.member_id}
-                            variant="outlined"
-                            sx={{ p: 2 }}
-                          >
-                            <Stack spacing={1.5}>
                               <Stack
-                                direction={{ xs: "column", md: "row" }}
-                                justifyContent="space-between"
+                                direction={{ xs: "column", sm: "row" }}
                                 spacing={1}
                               >
-                                <Box>
-                                  <Typography fontWeight={600}>
-                                    {eventStrings.labels.memberId}: {application.member_id}
-                                  </Typography>
-                                </Box>
-
-                                <Stack
-                                  direction={{ xs: "column", sm: "row" }}
-                                  spacing={1}
-                                >
-                                  <Chip
-                                    label={getDecisionStatusLabel(
-                                      application.decision_status,
-                                    )}
-                                  />
-                                  <Chip
-                                    label={getAttendanceStatusLabel(
-                                      application.attendance_status,
-                                    )}
-                                  />
-                                </Stack>
+                                <Chip
+                                  label={getDecisionStatusLabel(
+                                    application.decision_status,
+                                  )}
+                                />
+                                <Chip
+                                  label={getAttendanceStatusLabel(
+                                    application.attendance_status,
+                                  )}
+                                />
                               </Stack>
-
-                              <Typography variant="body2">
-                                <strong>{eventStrings.labels.attendanceMode}:</strong>{" "}
-                                {getAttendanceModeLabel(application.attendance_mode)}
-                              </Typography>
-
-                              <Typography variant="body2">
-                                <strong>{eventStrings.labels.appliedAt}:</strong>{" "}
-                                {formatEventDateTime(application.applied_at)}
-                              </Typography>
-
-                              {application.feedback_submitted_at && (
-                                <Typography variant="body2">
-                                  <strong>{eventStrings.labels.feedbackSubmitted}:</strong>{" "}
-                                  {formatEventDateTime(application.feedback_submitted_at)}
-                                </Typography>
-                              )}
-
-                              {canDecideApplications && (
-                                <TextField
-                                  select
-                                  label={eventStrings.labels.updateDecision}
-                                  value={application.decision_status}
-                                  onChange={(event) =>
-                                    void handleDecision(
-                                      application.member_id,
-                                      event.target.value as DecisionStatus,
-                                    )
-                                  }
-                                  disabled={busyMemberId === application.member_id}
-                                  sx={{ maxWidth: 260 }}
-                                >
-                                  {decisionOptions.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                      {getDecisionStatusLabel(option)}
-                                    </MenuItem>
-                                  ))}
-                                </TextField>
-                              )}
-
-                              {canHandleAttendance && (
-                                <Stack
-                                  direction={{ xs: "column", sm: "row" }}
-                                  spacing={1}
-                                >
-                                  <Button
-                                    variant="outlined"
-                                    disabled={
-                                      busyMemberId === application.member_id ||
-                                      !attendanceEnabledForEvent ||
-                                      !attendanceAllowed
-                                    }
-                                    onClick={() =>
-                                      void handleAttendance(
-                                        application.member_id,
-                                        "attended",
-                                      )
-                                    }
-                                  >
-                                    {eventStrings.actions.markAttended}
-                                  </Button>
-
-                                  <Button
-                                    variant="outlined"
-                                    color="warning"
-                                    disabled={
-                                      busyMemberId === application.member_id ||
-                                      !attendanceEnabledForEvent ||
-                                      !attendanceAllowed
-                                    }
-                                    onClick={() =>
-                                      void handleAttendance(
-                                        application.member_id,
-                                        "no_show",
-                                      )
-                                    }
-                                  >
-                                    {eventStrings.actions.markNoShow}
-                                  </Button>
-                                </Stack>
-                              )}
                             </Stack>
-                          </Paper>
-                        );
-                      })
+
+                            <Typography variant="body2">
+                              <strong>{eventStrings.labels.attendanceMode}:</strong>{" "}
+                              {getAttendanceModeLabel(application.attendance_mode)}
+                            </Typography>
+
+                            <Typography variant="body2">
+                              <strong>{eventStrings.labels.appliedAt}:</strong>{" "}
+                              {formatEventDateTime(application.applied_at)}
+                            </Typography>
+
+                            {application.feedback_submitted_at && (
+                              <Typography variant="body2">
+                                <strong>{eventStrings.labels.feedbackSubmitted}:</strong>{" "}
+                                {formatEventDateTime(application.feedback_submitted_at)}
+                              </Typography>
+                            )}
+
+                            {canDecideApplications && (
+                              <TextField
+                                select
+                                label={eventStrings.labels.updateDecision}
+                                value={application.decision_status}
+                                onChange={(event) =>
+                                  void handleDecision(
+                                    application.member_id,
+                                    event.target.value as DecisionStatus,
+                                  )
+                                }
+                                disabled={busyMemberId === application.member_id}
+                                sx={{ maxWidth: 260 }}
+                              >
+                                {decisionOptions.map((option) => (
+                                  <MenuItem key={option} value={option}>
+                                    {getDecisionStatusLabel(option)}
+                                  </MenuItem>
+                                ))}
+                              </TextField>
+                            )}
+                          </Stack>
+                        </Paper>
+                      ))
                     )}
                   </Stack>
                 </Paper>
