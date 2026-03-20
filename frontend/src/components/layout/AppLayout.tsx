@@ -3,25 +3,30 @@ import { Outlet, useLocation } from "react-router-dom";
 
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import { layoutText } from "./layoutText";
 
 function getPageTitle(pathname: string): string {
   if (pathname === "/" || pathname === "/dashboard") {
-    return "Dashboard";
+    return layoutText.pageTitles.dashboard;
   }
 
   if (pathname.startsWith("/members")) {
-    return "Members";
+    return layoutText.pageTitles.members;
   }
 
   if (pathname.startsWith("/projects")) {
-    return "Projects";
+    return layoutText.pageTitles.projects;
   }
 
   if (pathname.startsWith("/events")) {
-    return "Events";
+    return layoutText.pageTitles.events;
   }
 
-  return "Club Panel";
+  if (pathname.startsWith("/settings")) {
+    return layoutText.pageTitles.settings;
+  }
+
+  return layoutText.pageTitles.fallback;
 }
 
 export default function AppLayout() {

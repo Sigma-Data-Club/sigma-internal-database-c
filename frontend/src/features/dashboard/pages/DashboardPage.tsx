@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../../context/AuthContext";
 import { hasPermission } from "../../../auth/permissions";
+import { dashboardText } from "../utils/dashboardStrings";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -25,17 +26,27 @@ export default function DashboardPage() {
   const canReadEvents = hasPermission(user, "event.read");
 
   const displayName =
-    [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.email || "Member";
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
+    user?.email ||
+    dashboardText.fallbackMember;
+
+  const sectionButtonSx = {
+    mx: 1,
+    mb: 1,
+    textTransform: "none",
+    fontWeight: 600,
+    borderRadius: 2,
+  };
 
   return (
     <Box sx={{ p: 3 }}>
       <Stack spacing={3}>
         <Box>
           <Typography variant="h4" gutterBottom>
-            Dashboard
+            {dashboardText.title}
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Welcome, {displayName}.
+            {dashboardText.welcome(displayName)}
           </Typography>
         </Box>
 
@@ -43,10 +54,10 @@ export default function DashboardPage() {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                No accessible sections
+                {dashboardText.noAccessibleSectionsTitle}
               </Typography>
               <Typography color="text.secondary">
-                Your account is signed in, but no dashboard sections are available for your current permissions.
+                {dashboardText.noAccessibleSectionsDescription}
               </Typography>
             </CardContent>
           </Card>
@@ -59,15 +70,19 @@ export default function DashboardPage() {
                 <CardContent>
                   <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
                     <PeopleIcon />
-                    <Typography variant="h6">Members</Typography>
+                    <Typography variant="h6">{dashboardText.members.title}</Typography>
                   </Stack>
                   <Typography color="text.secondary">
-                    Browse club members, search by name or email, and open detailed profiles.
+                    {dashboardText.members.description}
                   </Typography>
                 </CardContent>
                 <CardActions>
-                  <Button onClick={() => navigate("/members")} variant="contained">
-                    Open members
+                  <Button
+                    onClick={() => navigate("/members")}
+                    variant="contained"
+                    sx={sectionButtonSx}
+                  >
+                    {dashboardText.members.button}
                   </Button>
                 </CardActions>
               </Card>
@@ -80,15 +95,19 @@ export default function DashboardPage() {
                 <CardContent>
                   <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
                     <FolderIcon />
-                    <Typography variant="h6">Projects</Typography>
+                    <Typography variant="h6">{dashboardText.projects.title}</Typography>
                   </Stack>
                   <Typography color="text.secondary">
-                    Browse projects, open project details, and access project management tools.
+                    {dashboardText.projects.description}
                   </Typography>
                 </CardContent>
                 <CardActions>
-                  <Button onClick={() => navigate("/projects")} variant="outlined">
-                    Open projects
+                  <Button
+                    onClick={() => navigate("/projects")}
+                    variant="contained"
+                    sx={sectionButtonSx}
+                  >
+                    {dashboardText.projects.button}
                   </Button>
                 </CardActions>
               </Card>
@@ -101,15 +120,19 @@ export default function DashboardPage() {
                 <CardContent>
                   <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
                     <EventIcon />
-                    <Typography variant="h6">Events</Typography>
+                    <Typography variant="h6">{dashboardText.events.title}</Typography>
                   </Stack>
                   <Typography color="text.secondary">
-                    Browse events, applications, attendance, and event analytics.
+                    {dashboardText.events.description}
                   </Typography>
                 </CardContent>
                 <CardActions>
-                  <Button onClick={() => navigate("/events")} variant="outlined">
-                    Open events
+                  <Button
+                    onClick={() => navigate("/events")}
+                    variant="contained"
+                    sx={sectionButtonSx}
+                  >
+                    {dashboardText.events.button}
                   </Button>
                 </CardActions>
               </Card>

@@ -6,6 +6,7 @@ import RequirePermissionRoute from "../components/common/RequirePermissionRoute"
 
 import LoginPage from "../features/auth/pages/LoginPage";
 import DashboardPage from "../features/dashboard/pages/DashboardPage";
+import SettingsPage from "../features/settings/pages/SettingsPage";
 
 import MembersPage from "../features/members/pages/MembersPage";
 import MemberDetailsPage from "../features/members/pages/MemberDetailsPage";
@@ -65,6 +66,11 @@ export const router = createBrowserRouter([
       },
 
       {
+        path: "settings",
+        element: <SettingsPage />,
+      },
+
+      {
         path: "members",
         element: (
           <RequirePermissionRoute permissions={["member.read"]}>
@@ -106,13 +112,13 @@ export const router = createBrowserRouter([
         ),
       },
       {
-  path: "projects/analytics",
-  element: (
-    <RequirePermissionRoute permissions={["project.stats.read"]}>
-      <ProjectAnalyticsPage />
-    </RequirePermissionRoute>
-  ),
-},
+        path: "projects/analytics",
+        element: (
+          <RequirePermissionRoute permissions={["project.stats.read"]}>
+            <ProjectAnalyticsPage />
+          </RequirePermissionRoute>
+        ),
+      },
 
       {
         path: "events",

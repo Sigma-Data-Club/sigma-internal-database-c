@@ -1,6 +1,7 @@
 import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
 
 import { useAuth } from "../../context/AuthContext";
+import { layoutText } from "./layoutText";
 
 const drawerWidth = 240;
 
@@ -30,7 +31,7 @@ export default function Topbar({ title }: TopbarProps) {
 
         <Box>
           <Button color="inherit" onClick={handleLogout}>
-            Logout
+            {layoutText.topbar.logout}
           </Button>
         </Box>
       </Toolbar>
