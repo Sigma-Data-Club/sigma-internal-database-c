@@ -20,7 +20,6 @@ class Member(Base):
     __tablename__ = "member"
 
     __table_args__ = (
-        # Course / year of study (optional): allow NULL or 1..8
         CheckConstraint(
             "study_year IS NULL OR study_year BETWEEN 1 AND 8",
             name="study_year_valid_range",
@@ -40,10 +39,13 @@ class Member(Base):
         nullable=True,
     )
 
-    # NEW: student's course / year of study
     study_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default="true",
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -51,7 +53,6 @@ class Member(Base):
         server_default=func.now(),
     )
 
-    # ---------- Relationships ----------
     academic_program = relationship("AcademicProgram")
 
     roles = relationship(
@@ -66,15 +67,17 @@ class Member(Base):
         cascade="all, delete-orphan",
     )
 
+    project_applications = relationship(
+        "ProjectApplication",
+        back_populates="member",
+        cascade="all, delete-orphan",
+        foreign_keys="ProjectApplication.member_id",
+    )
+
     event_applications = relationship(
         "EventApplication",
         back_populates="member",
         cascade="all, delete-orphan",
-    )
-
-    event_feedbacks = relationship(
-        "EventFeedback",
-        back_populates="member",
     )
 
     academic_credits = relationship(
@@ -85,6 +88,19 @@ class Member(Base):
 
     activity_logs = relationship(
         "ActivityLog",
+        back_populates="member",
+        cascade="all, delete-orphan",
+    )
+
+    auth = relationship(
+        "MemberAuth",
+        back_populates="member",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    sessions = relationship(
+        "AuthSession",
         back_populates="member",
         cascade="all, delete-orphan",
     )
