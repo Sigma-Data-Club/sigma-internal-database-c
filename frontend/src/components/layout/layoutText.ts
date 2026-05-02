@@ -1,6 +1,7 @@
 export const layoutText = {
   pageTitles: {
     dashboard: "Panel principal",
+    ai: "Asistente AI",
     members: "Miembros",
     projects: "Proyectos",
     events: "Eventos",
@@ -10,6 +11,7 @@ export const layoutText = {
 
   sidebar: {
     dashboard: "Panel principal",
+    ai: "Asistente AI",
     members: "Miembros",
     projects: "Proyectos",
     events: "Eventos",

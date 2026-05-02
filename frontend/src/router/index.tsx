@@ -10,6 +10,7 @@ import SettingsPage from "../features/settings/pages/SettingsPage";
 
 import MembersPage from "../features/members/pages/MembersPage";
 import MemberDetailsPage from "../features/members/pages/MemberDetailsPage";
+import MemberManagementPage from "../features/members/pages/MemberManagementPage";
 
 import ProjectsPage from "../features/projects/pages/ProjectsPage";
 import ProjectManagementPage from "../features/projects/pages/ProjectManagementPage";
@@ -22,6 +23,18 @@ import EventAnalyticsPage from "../features/events/pages/EventAnalyticsPage";
 import EventManagementPage from "../features/events/pages/EventManagementPage";
 
 import NotFoundPage from "../pages/NotFoundPage";
+
+import AiChatPage from "../features/ai/pages/AiChatPage";
+
+function MemberOverviewRedirect() {
+  const { memberId } = useParams();
+
+  if (!memberId) {
+    return <Navigate to="/members" replace />;
+  }
+
+  return <Navigate to={`/members/${memberId}/manage?tab=overview`} replace />;
+}
 
 function EventOverviewRedirect() {
   const { eventId } = useParams();
@@ -64,7 +77,10 @@ export const router = createBrowserRouter([
         path: "dashboard",
         element: <DashboardPage />,
       },
-
+      {
+        path: "ai",
+        element: <AiChatPage />,
+      },
       {
         path: "settings",
         element: <SettingsPage />,
@@ -82,7 +98,23 @@ export const router = createBrowserRouter([
         path: "members/:memberId",
         element: (
           <RequirePermissionRoute permissions={["member.read"]}>
+            <MemberOverviewRedirect />
+          </RequirePermissionRoute>
+        ),
+      },
+      {
+        path: "members/:memberId/details",
+        element: (
+          <RequirePermissionRoute permissions={["member.read"]}>
             <MemberDetailsPage />
+          </RequirePermissionRoute>
+        ),
+      },
+      {
+        path: "members/:memberId/manage",
+        element: (
+          <RequirePermissionRoute permissions={["member.read"]}>
+            <MemberManagementPage />
           </RequirePermissionRoute>
         ),
       },

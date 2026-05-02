@@ -79,7 +79,8 @@ services:
   api:
     container_name: club_api
     restart: unless-stopped
-
+    env_file:
+      - .env
     # Merge reusable blocks: build + env + volumes + healthcheck.
     <<: [*backend_build, *env, *backend_volumes, *api_healthcheck]
 

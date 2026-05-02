@@ -1,12 +1,14 @@
-from __future__ import annotations
-
-from typing import Any
-
+from typing import Any, List
 from pydantic import BaseModel, Field
 
 
+class AIMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
 class AIChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
+    messages: List[AIMessage] = Field(min_items=1)
     include_debug: bool = False
 
 

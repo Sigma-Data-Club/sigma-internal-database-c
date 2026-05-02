@@ -3,11 +3,13 @@ import axios from "axios";
 import {
   Alert,
   Box,
+  Chip,
   CircularProgress,
   List,
   ListItemButton,
   ListItemText,
   Paper,
+  Stack,
   TextField,
   Typography,
 } from "@mui/material";
@@ -15,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 
 import { listMembers } from "../../../api/member";
 import type { Member } from "../../../types/member";
+import { memberStrings } from "../utils/memberStrings";
 
 export default function MembersPage() {
   const navigate = useNavigate();
@@ -41,7 +44,7 @@ export default function MembersPage() {
           } else if (status === 403) {
             setError("You do not have permission to view members.");
           } else {
-            setError("Failed to load members.");
+            setError(memberStrings.errors.loadMembersFailed);
           }
         } else {
           setError("Unexpected error.");
@@ -80,56 +83,80 @@ export default function MembersPage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Members
-      </Typography>
-
-      <TextField
-        label="Search members"
-        placeholder="Search by name, email, phone or ID"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        fullWidth
-        sx={{ mb: 2 }}
-      />
-
-      {loading && (
-        <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-          <CircularProgress size={24} />
-          <Typography>Loading members...</Typography>
+      <Stack spacing={2}>
+        <Box>
+          <Typography variant="h4" gutterBottom>
+            {memberStrings.pageTitle}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {memberStrings.pageSubtitle}
+          </Typography>
         </Box>
-      )}
 
-      {!loading && error && <Alert severity="error">{error}</Alert>}
+        <TextField
+          label={memberStrings.searchLabel}
+          placeholder={memberStrings.searchPlaceholder}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          fullWidth
+        />
 
-      {!loading && !error && (
-        <Paper>
-          {filteredMembers.length === 0 ? (
-            <Box sx={{ p: 2 }}>
-              <Typography>
-                {search.trim()
-                  ? "No members match your search."
-                  : "No members found."}
-              </Typography>
-            </Box>
-          ) : (
-            <List disablePadding>
-              {filteredMembers.map((member) => (
-                <ListItemButton
-                  key={member.member_id}
-                  divider
-                  onClick={() => navigate(`/members/${member.member_id}`)}
-                >
-                  <ListItemText
-                    primary={`${member.first_name} ${member.last_name}`}
-                    secondary={member.email}
-                  />
-                </ListItemButton>
-              ))}
-            </List>
-          )}
-        </Paper>
-      )}
+        {loading && (
+          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+            <CircularProgress size={24} />
+            <Typography>{memberStrings.loadingMembers}</Typography>
+          </Box>
+        )}
+
+        {!loading && error && <Alert severity="error">{error}</Alert>}
+
+        {!loading && !error && (
+          <Paper>
+            {filteredMembers.length === 0 ? (
+              <Box sx={{ p: 2 }}>
+                <Typography>
+                  {search.trim()
+                    ? memberStrings.noMembersMatch
+                    : memberStrings.noMembers}
+                </Typography>
+              </Box>
+            ) : (
+              <List disablePadding>
+                {filteredMembers.map((member) => (
+                  <ListItemButton
+                    key={member.member_id}
+                    divider
+                    onClick={() =>
+                      navigate(`/members/${member.member_id}/manage?tab=overview`)
+                    }
+                  >
+                    <ListItemText
+                      primary={`${member.first_name} ${member.last_name}`}
+                      secondary={
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          sx={{ mt: 0.5 }}
+                          alignItems="center"
+                          flexWrap="wrap"
+                        >
+                          <span>{member.email}</span>
+                          <Chip
+                            size="small"
+                            label={member.is_active ? "Active" : "Inactive"}
+                            color={member.is_active ? "success" : "default"}
+                            variant={member.is_active ? "filled" : "outlined"}
+                          />
+                        </Stack>
+                      }
+                    />
+                  </ListItemButton>
+                ))}
+              </List>
+            )}
+          </Paper>
+        )}
+      </Stack>
     </Box>
   );
 }

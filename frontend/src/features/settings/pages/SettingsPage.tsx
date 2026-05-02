@@ -185,32 +185,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* PREVIEW */}
-      <Card
-        elevation={0}
-        sx={{
-          mb: 3,
-          border: `1px solid ${theme.palette.divider}`,
-          borderRadius: 3,
-          backgroundColor: theme.palette.background.paper,
-        }}
-      >
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h6" fontWeight={600} gutterBottom>
-            {t.preview.title}
-          </Typography>
-
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
-            {t.preview.description}
-          </Typography>
-
-          <Stack direction="row" spacing={1.5}>
-            <Button variant="contained">{t.preview.primaryButton}</Button>
-            <Button variant="outlined">{t.preview.secondaryButton}</Button>
-          </Stack>
-        </CardContent>
-      </Card>
-
       <Button variant="outlined" onClick={resetSettings}>
         {t.reset}
       </Button>
